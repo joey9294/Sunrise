@@ -117,7 +117,8 @@ struct Result {
  * @param buffer Destination, cleared first.
  * @param length Receives the stored length.
  */
-constexpr void store_text(std::string_view text, std::span<char> buffer, std::size_t& length) noexcept {
+constexpr void
+store_text(std::string_view text, std::span<char> buffer, std::size_t& length) noexcept {
     length = text.size() < buffer.size() ? text.size() : buffer.size() - 1;
     for (std::size_t index = 0; index < buffer.size(); ++index) {
         buffer[index] = index < length ? text[index] : '\0';

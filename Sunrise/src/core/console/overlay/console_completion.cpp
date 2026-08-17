@@ -6,7 +6,8 @@ namespace sunrise::core::console::overlay {
 namespace {
 
 /** @return The longest run both names begin with. */
-[[nodiscard]] std::string_view common_run(std::string_view first, std::string_view second) noexcept {
+[[nodiscard]] std::string_view common_run(std::string_view first,
+                                          std::string_view second) noexcept {
     const std::size_t shortest = first.size() < second.size() ? first.size() : second.size();
     std::size_t shared = 0;
     while (shared < shortest && first[shared] == second[shared]) {

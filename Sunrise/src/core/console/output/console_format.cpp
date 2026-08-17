@@ -72,10 +72,11 @@ void format_value(const Value& value, std::span<char> buffer, std::size_t& lengt
         return;
     case Type::integer: {
         std::array<char, 32> digits{};
-        const int written =
-            std::snprintf(digits.data(), digits.size(), "%lld", static_cast<long long>(value.integer));
+        const int written = std::snprintf(
+            digits.data(), digits.size(), "%lld", static_cast<long long>(value.integer));
         if (written > 0) {
-            append(buffer, length, std::string_view{digits.data(), static_cast<std::size_t>(written)});
+            append(
+                buffer, length, std::string_view{digits.data(), static_cast<std::size_t>(written)});
         }
         return;
     }
@@ -83,7 +84,8 @@ void format_value(const Value& value, std::span<char> buffer, std::size_t& lengt
         std::array<char, 64> digits{};
         const int written = std::snprintf(digits.data(), digits.size(), "%.6f", value.real);
         if (written > 0) {
-            append(buffer, length, std::string_view{digits.data(), static_cast<std::size_t>(written)});
+            append(
+                buffer, length, std::string_view{digits.data(), static_cast<std::size_t>(written)});
             trim_fraction(buffer, length);
         }
         return;
@@ -124,11 +126,8 @@ void format_usage(const registry::Descriptor& entry,
         append(buffer, length, "]");
         if (has_bounds(entry)) {
             std::array<char, 64> range{};
-            const int written = std::snprintf(range.data(),
-                                              range.size(),
-                                              " %g..%g",
-                                              entry.minimum,
-                                              entry.maximum);
+            const int written =
+                std::snprintf(range.data(), range.size(), " %g..%g", entry.minimum, entry.maximum);
             if (written > 0) {
                 append(buffer,
                        length,

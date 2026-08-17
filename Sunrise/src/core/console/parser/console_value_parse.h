@@ -60,7 +60,8 @@ inline constexpr std::array<std::string_view, 4> kFalseWords{"false", "0", "off"
  * @param output Filled only on success.
  * @return `ok`, or `badArgument` when the token is not a plain decimal integer.
  */
-[[nodiscard]] constexpr Status parse_integer(std::string_view token, std::int64_t& output) noexcept {
+[[nodiscard]] constexpr Status parse_integer(std::string_view token,
+                                             std::int64_t& output) noexcept {
     bool negative = false;
     std::size_t index = 0;
     if (index < token.size() && (token[index] == '-' || token[index] == '+')) {
@@ -140,7 +141,8 @@ inline constexpr std::array<std::string_view, 4> kFalseWords{"false", "0", "off"
  * @return `ok`; `badArgument` when the token does not read as the domain; `outOfRange` when text
  *         read correctly but is longer than a value may carry.
  */
-[[nodiscard]] constexpr Status parse_value(std::string_view token, Type type, Value& output) noexcept {
+[[nodiscard]] constexpr Status
+parse_value(std::string_view token, Type type, Value& output) noexcept {
     output = Value{};
     output.type = type;
     switch (type) {
@@ -194,8 +196,8 @@ check_bounds(const Value& value, double minimum, double maximum) noexcept {
  * @param choices Accepted words, or empty when any text is allowed.
  * @return `ok`, or `outOfRange` when the text is not one of the choices.
  */
-[[nodiscard]] constexpr Status
-check_choices(const Value& value, std::span<const std::string_view> choices) noexcept {
+[[nodiscard]] constexpr Status check_choices(const Value& value,
+                                             std::span<const std::string_view> choices) noexcept {
     if (choices.empty() || value.type != Type::text) {
         return Status::ok;
     }
@@ -261,7 +263,8 @@ static_assert(detail::read_status("1e3", Type::real) == Status::badArgument);
 // A bound is inclusive at both ends, which is what lets a reader type the documented minimum.
 static_assert(check_bounds(Value{.type = Type::real, .real = 1.0}, 1.0, 100.0) == Status::ok);
 static_assert(check_bounds(Value{.type = Type::real, .real = 100.0}, 1.0, 100.0) == Status::ok);
-static_assert(check_bounds(Value{.type = Type::real, .real = 0.5}, 1.0, 100.0) == Status::outOfRange);
+static_assert(check_bounds(Value{.type = Type::real, .real = 0.5}, 1.0, 100.0)
+              == Status::outOfRange);
 static_assert(check_bounds(Value{.type = Type::real, .real = 1e9}, 0.0, 0.0) == Status::ok);
 
 } // namespace sunrise::core::console::parser

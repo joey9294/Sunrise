@@ -28,6 +28,7 @@ SRWLOCK g_refreshLock{SRWLOCK_INIT};
            && state::build_data::inventory_bucket_descriptors_ready()
            && state::build_data::socket_entry_lists_ready()
            && state::build_data::ability_buckets_ready()
+           && state::build_data::socket_entry_buckets_ready()
            && state::build_data::progression_definitions_ready()
            && state::build_data::scenario_layouts_ready() && state::build_data::spawn_sets_ready()
            && state::build_data::hash_names_ready()
@@ -49,6 +50,7 @@ bool refresh() noexcept {
         AcquireSRWLockExclusive(&g_refreshLock);
         const bool persisted = state::ensure_profile_item_identities()
                               && state::ensure_character_emote_collection()
+                              && state::ensure_character_subclasses()
                               && state::build_data::persist();
         // Nothing reads a package again until the next boot, so the open files and the held
         // tables go back now rather than at process exit.
@@ -68,6 +70,7 @@ bool refresh() noexcept {
     const bool domainsReady = ready();
     const bool complete = domainsReady && state::ensure_profile_item_identities()
                          && state::ensure_character_emote_collection()
+                         && state::ensure_character_subclasses()
                          && state::build_data::persist();
     // The overlay ends with the work, not with the slice, so it spans every retry the pass needs.
     if (complete) {

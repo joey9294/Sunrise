@@ -22,11 +22,20 @@ enum class Kind : std::uint8_t {
     command,
 };
 
-/** One declared argument of a command. */
+/**
+ * One declared argument of a command.
+ *
+ * An argument carries the same bounds and choices a variable does. The checks are the same ones,
+ * so declaring them here means a command's arguments are validated before its handler runs,
+ * exactly as a variable's value is.
+ */
 struct Argument {
     std::string_view name;
     std::string_view help;
     Type type{Type::boolean};
+    /** Inclusive bounds a numeric argument accepts. Equal values mean the domain is unbounded. */
+    double minimum{};
+    double maximum{};
     /** Choices this argument accepts, or empty when any value of its type is allowed. */
     std::span<const std::string_view> choices{};
 };

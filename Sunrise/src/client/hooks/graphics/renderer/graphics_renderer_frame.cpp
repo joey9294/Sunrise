@@ -5,6 +5,7 @@
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
 
+#include "../../../../core/console/overlay/console_overlay.h"
 #include "../../../../core/ui/busy/busy.h"
 #include "../../../../core/ui/fonts/runtime/ui_runtime_font_lifecycle.h"
 #include "../../../../core/ui/hud/overlay.h"

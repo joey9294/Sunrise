@@ -28,7 +28,7 @@ namespace sunrise::client {
 
 /** Initializes Client-owned process state without installing hooks. */
 bool initialize(void* module) noexcept {
-    // Loaded before the pages register, so each page draws saved values on its first frame.
+    // Loaded before the pages register, so the movement page draws saved values on its first frame.
     movement::initialize(module);
     spawn::initialize(module);
     player::initialize(module);

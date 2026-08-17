@@ -7,7 +7,6 @@
 
 #include "../../../../core/ui/busy/busy.h"
 #include "../../../../core/ui/fonts/runtime/ui_runtime_font_lifecycle.h"
-#include "../../../../core/ui/hud/overlay.h"
 #include "../../../../core/ui/layout/layout.h"
 #include "../../../../core/ui/notice/ui_notice_overlay.h"
 #include "../../../../core/ui/runtime/ui_visibility_runtime.h"
@@ -141,13 +140,11 @@ void render_frame_locked() noexcept {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     // A hidden surface still draws until its close animation ends, so the layout decides. The
-    // HUD, running-work and notice overlays draw whether the surface is open or not. The HUD
-    // goes first, so the surface stays above it when the two meet.
-    const bool hudDrawn = core::ui::hud::draw(visibility.enabled);
+    // running-work overlay draws whether the surface is open or not.
     const bool surfaceDrawn = core::ui::layout::render(visibility.visible);
     const bool busyDrawn = core::ui::busy::draw();
     const bool noticeDrawn = core::ui::notice::draw();
-    if (!hudDrawn && !surfaceDrawn && !busyDrawn && !noticeDrawn) {
+    if (!surfaceDrawn && !busyDrawn && !noticeDrawn) {
         // A frame nobody claimed still drains backend state, and sends no draw data.
         ImGui::EndFrame();
         return;

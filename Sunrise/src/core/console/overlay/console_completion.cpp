@@ -25,7 +25,7 @@ Completion complete(std::string_view prefix) noexcept {
 
     bool seenAny = false;
     for (const registry::Descriptor& entry : view.entries()) {
-        if (!entry.name.starts_with(prefix)) {
+        if (!starts_with_folded(entry.name, prefix)) {
             continue;
         }
         // The shared run is narrowed by every match, including the ones past capacity. Narrowing
@@ -50,7 +50,7 @@ Completion suggest(std::string_view needle) noexcept {
     const registry::RegistrySnapshot view = registry::snapshot();
 
     for (const registry::Descriptor& entry : view.entries()) {
-        if (entry.name.find(needle) == std::string_view::npos) {
+        if (!contains_folded(entry.name, needle)) {
             continue;
         }
         if (found.count >= kCompletionCapacity) {

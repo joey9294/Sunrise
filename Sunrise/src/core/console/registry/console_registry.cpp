@@ -40,6 +40,32 @@ SRWLOCK g_registryLock{SRWLOCK_INIT};
 }
 
 /**
+ * Finds one entry by a name a reader may have typed in any case.
+ *
+ * Registered names are folded, so the ordered table is also folded and the search that walks it
+ * stays correct while comparing case-insensitively.
+ *
+ * @return Its index, or the count when nothing matches. The caller holds the lock.
+ */
+[[nodiscard]] std::size_t index_of_folded(std::string_view name) noexcept {
+    const std::size_t index = lower_bound_index(name);
+    if (index < g_count && equals_folded(g_entries[index].name, name)) {
+        return index;
+    }
+    // A folded query can sort beside its match rather than onto it, so the neighbour is checked
+    // before the search gives up.
+    if (index > 0 && equals_folded(g_entries[index - 1].name, name)) {
+        return index - 1;
+    }
+    for (std::size_t scan = 0; scan < g_count; ++scan) {
+        if (equals_folded(g_entries[scan].name, name)) {
+            return scan;
+        }
+    }
+    return g_count;
+}
+
+/**
  * Inserts one descriptor at its sorted position. The caller holds the lock and has already
  * established that the name is free and the table has room.
  */
@@ -154,8 +180,8 @@ std::size_t unregister_prefix(std::string_view prefix) noexcept {
 /** Finds one entry by its exact name. */
 bool find(std::string_view name, Descriptor& output) noexcept {
     AcquireSRWLockShared(&g_registryLock);
-    const std::size_t index = lower_bound_index(name);
-    const bool matched = index < g_count && g_entries[index].name == name;
+    const std::size_t index = index_of_folded(name);
+    const bool matched = index < g_count;
     if (matched) {
         output = g_entries[index];
     }

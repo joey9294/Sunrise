@@ -32,7 +32,9 @@ void run_find(std::span<const Value> arguments, Result& output) noexcept {
 
     std::size_t matched = 0;
     for (const registry::Descriptor& entry : view.entries()) {
-        if (entry.name.find(needle) == std::string_view::npos) {
+        // The help is searched as well as the name. A reader looking for "magazine" is reaching
+        // for the entry whose help says it, and its name never will.
+        if (!contains_folded(entry.name, needle) && !contains_folded(entry.help, needle)) {
             continue;
         }
         ++matched;
@@ -85,8 +87,10 @@ void run_help(std::span<const Value> arguments, Result& output) noexcept {
     output.status = Status::ok;
 }
 
-constexpr std::array<registry::Argument, 1> kFindArguments{registry::Argument{
-    .name = "text", .help = "Run of text an entry name must contain.", .type = Type::text}};
+constexpr std::array<registry::Argument, 1> kFindArguments{
+    registry::Argument{.name = "text",
+                       .help = "Run of text an entry name or its help must contain.",
+                       .type = Type::text}};
 
 constexpr std::array<registry::Argument, 1> kHelpArguments{registry::Argument{
     .name = "name", .help = "Exact name of the entry to describe.", .type = Type::text}};
@@ -101,7 +105,7 @@ constexpr std::array<registry::Argument, 1> kHelpArguments{registry::Argument{
 
     registry::Descriptor find{};
     find.name = "console.find";
-    find.help = "Lists every command and variable whose name contains a run of text.";
+    find.help = "Lists every command and variable whose name or help contains a run of text.";
     find.kind = registry::Kind::command;
     find.arguments = kFindArguments;
     find.invoke = &run_find;

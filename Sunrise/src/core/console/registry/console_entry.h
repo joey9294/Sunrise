@@ -113,6 +113,11 @@ struct Descriptor {
     if (descriptor.name.empty() || descriptor.name.size() >= kNameCapacity) {
         return false;
     }
+    // Lookups fold what a reader types, which only reaches a name that is itself folded. Refusing
+    // the rest here keeps that guarantee at registration instead of leaving one entry unreachable.
+    if (!is_folded(descriptor.name)) {
+        return false;
+    }
     if (descriptor.type >= Type::count) {
         return false;
     }

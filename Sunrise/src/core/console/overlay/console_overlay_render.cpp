@@ -23,8 +23,13 @@ namespace {
 
 /** The console covers the top of the viewport, which is where a reader expects one to drop. */
 constexpr float kViewportHeightShare = 0.45F;
-/** Suggestions shown at once. Past this the list stops narrowing anything and starts hiding it. */
-constexpr std::size_t kVisibleSuggestions = 8;
+/**
+ * Suggestions shown at once.
+ *
+ * The list takes its rows from the scrollback, so a taller one is paid for in history a reader can
+ * no longer see. Five is enough to choose from and leaves the answers above it readable.
+ */
+constexpr std::size_t kVisibleSuggestions = 5;
 /** 1 scrolls to the bottom edge of the newest line. */
 constexpr float kScrollBottom = 1.0F;
 /** The prompt is the whole width, so a long line is edited without a horizontal scroll. */
@@ -92,6 +97,12 @@ bool g_scrollToBottom{true};
 bool g_wasVisible{};
 /** The banner is a greeting, so it is written once per process rather than once per opening. */
 bool g_bannerWritten{};
+/** Set when the reader asked to see everything from an empty prompt. */
+bool g_browseAll{};
+/** Set while the list offers values for an argument rather than names of entries. */
+bool g_offeringValues{};
+/** Where the token being typed starts, which is what a chosen value replaces. */
+std::size_t g_tokenStart{};
 
 /** @param kind Line kind to tint. @return Its color. */
 [[nodiscard]] const ImVec4& tint_for(output::LineKind kind) noexcept {
@@ -125,15 +136,100 @@ bool g_bannerWritten{};
 
 /** @return True while a suggestion list is on screen and owns the arrow keys. */
 [[nodiscard]] bool list_open() noexcept {
-    return naming() && g_suggestions.count != 0;
+    return g_suggestions.count != 0;
+}
+
+/** @return Offset of the token being typed, which is one past the last space. */
+[[nodiscard]] std::size_t token_start() noexcept {
+    const std::string_view typed = typed_line();
+    const std::size_t lastSpace = typed.find_last_of(' ');
+    return lastSpace == std::string_view::npos ? 0 : lastSpace + 1;
+}
+
+/**
+ * Collects the values an argument declares, narrowed by what is typed of it.
+ *
+ * The choices are already declared, already enforced by the reader and already printed by help.
+ * Offering them here is the one place that declaration was not being spent.
+ *
+ * @param output Filled with the matching choices.
+ * @return True when the token being typed has declared choices at all.
+ */
+[[nodiscard]] bool collect_values(Completion& output) noexcept {
+    const std::string_view typed = typed_line();
+    const std::size_t nameEnd = typed.find(' ');
+    if (nameEnd == std::string_view::npos) {
+        return false;
+    }
+    registry::Descriptor entry{};
+    if (!registry::find(typed.substr(0, nameEnd), entry)) {
+        return false;
+    }
+
+    std::span<const std::string_view> choices{};
+    if (entry.kind == registry::Kind::variable) {
+        choices = entry.choices;
+    } else {
+        // Spaces already passed say which argument the token belongs to.
+        std::size_t index = 0;
+        for (std::size_t at = nameEnd; at < typed.size(); ++at) {
+            if (typed[at] != ' ' && (at == 0 || typed[at - 1] == ' ')) {
+                ++index;
+            }
+        }
+        const std::size_t current = index == 0 ? 0 : index - 1;
+        if (current >= entry.arguments.size()) {
+            return false;
+        }
+        choices = entry.arguments[current].choices;
+    }
+    if (choices.empty()) {
+        return false;
+    }
+
+    const std::string_view partial = typed.substr(token_start());
+    output = Completion{};
+    for (const std::string_view choice : choices) {
+        if (!contains_folded(choice, partial)) {
+            continue;
+        }
+        if (output.count >= kCompletionCapacity) {
+            output.truncated = true;
+            break;
+        }
+        output.matches[output.count] = choice;
+        ++output.count;
+    }
+    return output.count != 0;
+}
+
+/** @return True when a signature row will be drawn, which is what reserves its height. */
+[[nodiscard]] bool signature_open() noexcept {
+    const std::string_view typed = typed_line();
+    const std::size_t nameEnd = typed.find(' ');
+    if (nameEnd == std::string_view::npos) {
+        return false;
+    }
+    registry::Descriptor entry{};
+    return registry::find(typed.substr(0, nameEnd), entry);
 }
 
 /** Refreshes the matches for what is typed, keeping the highlight inside them. */
 void refresh_suggestions() noexcept {
     const std::string_view typed = typed_line();
-    // An empty line offers everything, so opening the console already shows what exists rather
-    // than waiting for a first letter to prove the list is there.
-    g_suggestions = naming() ? suggest(typed) : Completion{};
+    // An empty line narrows nothing, so the list stays away rather than spending the scrollback's
+    // rows on a wall of every name. It opens on the first letter, or when the reader asks for the
+    // whole list from an empty prompt.
+    const bool wanted = !typed.empty() || g_browseAll;
+    g_tokenStart = token_start();
+    g_offeringValues = false;
+    if (naming()) {
+        g_suggestions = wanted ? suggest(typed) : Completion{};
+    } else {
+        Completion values{};
+        g_offeringValues = collect_values(values);
+        g_suggestions = g_offeringValues ? values : Completion{};
+    }
     if (g_selected >= g_suggestions.count) {
         g_selected = 0;
     }
@@ -161,6 +257,13 @@ void replace_input(ImGuiInputTextCallbackData* data, std::string_view line) noex
  */
 void apply_arrow(ImGuiInputTextCallbackData* data) noexcept {
     const bool up = data->EventKey == ImGuiKey_UpArrow;
+    if (!list_open() && typed_line().empty() && !up) {
+        // Down on an empty prompt is the shell gesture for "show me everything", and it is the
+        // only way left to browse once the list stopped opening on its own.
+        g_browseAll = true;
+        g_selected = 0;
+        return;
+    }
     if (list_open()) {
         if (up) {
             g_selected = g_selected == 0 ? g_suggestions.count - 1 : g_selected - 1;
@@ -179,6 +282,17 @@ void apply_arrow(ImGuiInputTextCallbackData* data) noexcept {
 
 /** Takes the highlighted name, or completes as far as every match agrees when none is listed. */
 void apply_completion(ImGuiInputTextCallbackData* data) noexcept {
+    if (g_offeringValues) {
+        if (g_selected >= g_suggestions.count) {
+            return;
+        }
+        // Only the token being typed is replaced, so the name and the arguments before it stay.
+        const std::string_view value = g_suggestions.matches[g_selected];
+        data->DeleteChars(static_cast<int>(g_tokenStart),
+                          data->BufTextLen - static_cast<int>(g_tokenStart));
+        data->InsertChars(data->BufTextLen, value.data(), value.data() + value.size());
+        return;
+    }
     if (!naming()) {
         return;
     }
@@ -312,7 +426,7 @@ void draw_suggestions() noexcept {
         ImGui::PopStyleColor();
 
         registry::Descriptor entry{};
-        if (registry::find(name, entry)) {
+        if (!g_offeringValues && registry::find(name, entry)) {
             if (selected) {
                 draw_entry_detail(entry);
                 draw_detail(entry.help);
@@ -441,6 +555,8 @@ bool initialize() noexcept {
     g_scrollToBottom = true;
     g_wasVisible = false;
     g_bannerWritten = false;
+    g_browseAll = false;
+    g_offeringValues = false;
     return builtins::initialize();
 }
 
@@ -477,15 +593,16 @@ bool render(bool visible) noexcept {
 
     // The scrollback takes what the prompt and its helper rows leave, so the rows appear by
     // taking space from the history rather than by pushing the prompt off the strip.
+    // The header is already drawn, so the height left to divide excludes it. Counting it here
+    // too would shorten the scrollback by exactly the header and leave that much dead space
+    // under the prompt.
     const std::size_t helperRows =
         list_open() ? (g_suggestions.count < kVisibleSuggestions ? g_suggestions.count
                                                                  : kVisibleSuggestions)
-                    : 0;
+                    : (signature_open() ? 1U : 0U);
     const float rowHeight = ImGui::GetTextLineHeightWithSpacing();
-    const float headerHeight = ui::scaling::dpi::pixels(kHeaderLogoExtent) + rowHeight;
-    const float reserved = headerHeight + ImGui::GetFrameHeightWithSpacing()
-                           + (static_cast<float>(helperRows) * rowHeight)
-                           + (list_open() ? 0.0F : rowHeight);
+    const float reserved =
+        ImGui::GetFrameHeightWithSpacing() + (static_cast<float>(helperRows) * rowHeight);
     if (ImGui::BeginChild(kScrollbackId, ImVec2{0.0F, -reserved}, kScrollbackFlags)) {
         draw_scrollback();
     }
@@ -510,6 +627,7 @@ bool render(bool visible) noexcept {
         }
         g_input = {};
         g_selected = 0;
+        g_browseAll = false;
         // Enter gives focus away, so it is taken back or the next line would need a click.
         g_focusPrompt = true;
     }

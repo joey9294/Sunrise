@@ -112,6 +112,66 @@ struct Result {
 };
 
 /**
+ * Folds one byte to lowercase, ASCII only.
+ *
+ * Entry names are lowercase by convention and the registry enforces it, so folding what a reader
+ * types is enough to make every lookup and search forgiving about case.
+ *
+ * @param character Byte to fold.
+ * @return Its lowercase form, or the byte unchanged.
+ */
+[[nodiscard]] constexpr char fold(char character) noexcept {
+    return character >= 'A' && character <= 'Z' ? static_cast<char>(character - 'A' + 'a')
+                                                : character;
+}
+
+/** @param text Text to test. @return True when no byte would change under folding. */
+[[nodiscard]] constexpr bool is_folded(std::string_view text) noexcept {
+    for (const char character : text) {
+        if (fold(character) != character) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** @return True when both runs are equal once folded. */
+[[nodiscard]] constexpr bool equals_folded(std::string_view first,
+                                           std::string_view second) noexcept {
+    if (first.size() != second.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < first.size(); ++index) {
+        if (fold(first[index]) != fold(second[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** @return True when the folded needle appears anywhere in the folded haystack. */
+[[nodiscard]] constexpr bool contains_folded(std::string_view haystack,
+                                             std::string_view needle) noexcept {
+    if (needle.size() > haystack.size()) {
+        return false;
+    }
+    // An empty needle matches at the first position, so the loop covers that case too.
+    for (std::size_t start = 0; start + needle.size() <= haystack.size(); ++start) {
+        if (equals_folded(haystack.substr(start, needle.size()), needle)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** @return True when the folded haystack begins with the folded needle. */
+[[nodiscard]] constexpr bool starts_with_folded(std::string_view haystack,
+                                                std::string_view needle) noexcept {
+    return needle.size() <= haystack.size()
+           && equals_folded(haystack.substr(0, needle.size()), needle);
+}
+
+/**
  * Copies text into a fixed buffer, truncating rather than overrunning.
  * @param text Source text.
  * @param buffer Destination, cleared first.
@@ -194,6 +254,18 @@ static_assert(!reached_handler(Status::outOfRange));
 static_assert(reached_handler(Status::ok));
 static_assert(reached_handler(Status::refused));
 static_assert(reached_handler(Status::failed));
+
+// Folding is what makes every lookup and search forgiving about how a reader typed a name.
+static_assert(equals_folded("Movement.Fly", "movement.fly"));
+static_assert(equals_folded("", ""));
+static_assert(!equals_folded("movement", "movements"));
+static_assert(contains_folded("movement.fly_speed", "SPEED"));
+static_assert(contains_folded("movement.fly_speed", ""));
+static_assert(!contains_folded("movement.fly_speed", "zzz"));
+static_assert(starts_with_folded("movement.fly", "MOV"));
+static_assert(!starts_with_folded("movement.fly", "fly"));
+static_assert(is_folded("movement.fly_speed"));
+static_assert(!is_folded("Movement"));
 
 // A name has to outrun the widest text a row may key, or a row key would truncate silently.
 static_assert(kNameCapacity <= kHelpCapacity);

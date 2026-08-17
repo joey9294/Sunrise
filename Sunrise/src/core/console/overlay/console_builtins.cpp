@@ -9,7 +9,7 @@
 #include "../registry/console_registry.h"
 #include "console_completion.h"
 
-namespace sunrise::core::console::overlay {
+namespace sunrise::core::console::builtins {
 namespace {
 
 /** Reads a text argument as the view its handler can match on. */
@@ -58,11 +58,11 @@ void run_help(std::span<const Value> arguments, Result& output) noexcept {
     registry::Descriptor entry{};
     if (!registry::find(name, entry)) {
         // The reader named something that does not exist, so the useful answer is what does.
-        const Completion nearby = complete(name);
+        const overlay::Completion nearby = overlay::complete(name);
         output.status = Status::unknownName;
         set_summary(output,
                     nearby.count == 0 ? "No such name."
-                                     : "No such name. Did you mean one of these?");
+                                      : "No such name. Did you mean one of these?");
         for (std::size_t index = 0; index < nearby.count; ++index) {
             output::write(output::LineKind::answer, nearby.matches[index]);
         }
@@ -85,15 +85,11 @@ void run_help(std::span<const Value> arguments, Result& output) noexcept {
     output.status = Status::ok;
 }
 
-constexpr std::array<registry::Argument, 1> kFindArguments{
-    registry::Argument{.name = "text",
-                       .help = "Run of text an entry name must contain.",
-                       .type = Type::text}};
+constexpr std::array<registry::Argument, 1> kFindArguments{registry::Argument{
+    .name = "text", .help = "Run of text an entry name must contain.", .type = Type::text}};
 
-constexpr std::array<registry::Argument, 1> kHelpArguments{
-    registry::Argument{.name = "name",
-                       .help = "Exact name of the entry to describe.",
-                       .type = Type::text}};
+constexpr std::array<registry::Argument, 1> kHelpArguments{registry::Argument{
+    .name = "name", .help = "Exact name of the entry to describe.", .type = Type::text}};
 
 /** @return The console's own entries, built once. */
 [[nodiscard]] std::array<registry::Descriptor, 3> builtin_entries() noexcept {
@@ -133,4 +129,4 @@ void shutdown() noexcept {
     static_cast<void>(registry::unregister_prefix(kBuiltinPrefix));
 }
 
-} // namespace sunrise::core::console::overlay
+} // namespace sunrise::core::console::builtins

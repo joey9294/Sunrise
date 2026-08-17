@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace sunrise::core::console::overlay {
+namespace sunrise::core::console::builtins {
 
 /** Name prefix the console's own entries carry, which is also what releases them. */
 inline constexpr std::string_view kBuiltinPrefix = "console.";
@@ -20,4 +20,4 @@ inline constexpr std::string_view kBuiltinPrefix = "console.";
 /** Removes the console's own commands. */
 void shutdown() noexcept;
 
-} // namespace sunrise::core::console::overlay
+} // namespace sunrise::core::console::builtins

@@ -13,6 +13,16 @@ namespace domain = state::build_data::abilities;
 /** The authored equipment slot that holds the subclass. */
 constexpr std::size_t kSubclassSlot =
     static_cast<std::size_t>(state::account::inventory::EquipmentSlot::subclass);
+/** Every shipped Light subclass, prepared at its compatible default ability selection. */
+struct ShippedSubclass {
+    std::uint32_t hash;
+    std::uint8_t thirdSuperEntry;
+};
+constexpr std::array<ShippedSubclass, 9> kShippedSubclasses{{
+    {0xC99B33E9U, 10}, {0xB0554739U, 20}, {0xB920CE9AU, 20},
+    {0x4F91DC97U, 10}, {0xD8B8D1FCU, 20}, {0xC0483D8BU, 20},
+    {0xCF88FEA5U, 20}, {0x686A154AU, 20}, {0xE7BC88B0U, 20},
+}};
 
 /**
  * Finds the socket entry list that carries one character's subclass abilities.
@@ -134,6 +144,51 @@ bool build_character_abilities(const reader::Source& source,
             continue;
         }
         output[count++] = row;
+    }
+    // Live element changes can select a subclass that was not equipped in authored settings.
+    // Prepare all nine default rows so the Family-4 refresh has the matching ability buckets.
+    for (const ShippedSubclass shipped : kShippedSubclasses) {
+        state::build_data::items::Definition item{};
+        state::build_data::items::details::Definition detail{};
+        if (!state::build_data::find_item_definition_hash(shipped.hash, item)
+            || !state::build_data::find_configured_item_detail(item.definitionIndex, detail)) {
+            continue;
+        }
+        struct Path { std::uint8_t superEntry; std::uint8_t meleeEntry; };
+        const std::array<Path, 3> paths{{{10, 11}, {10, 15}, {shipped.thirdSuperEntry, 21}}};
+        for (const Path path : paths) {
+          for (std::uint8_t movement = 4; movement <= 6; ++movement) {
+           for (std::uint8_t grenade = 7; grenade <= 9; ++grenade) {
+            for (std::uint8_t classAbility = 2; classAbility <= 3; ++classAbility) {
+            const domain::Selection selection{movement, grenade, path.superEntry,
+                                              path.meleeEntry, classAbility};
+            if (count >= output.size()) {
+                break;
+            }
+            domain::Definition row{};
+            row.socketEntryListIndex = detail.socketEntryListIndex;
+            row.selection = selection;
+            if (held(output.first(count), row)) {
+                continue;
+            }
+            tables::IndexRow indexRow{};
+            if (!tables::index_row(
+                    std::span<const std::byte>{table}, rows, row.socketEntryListIndex, indexRow)
+                || indexRow.targetTag == 0
+                || !reader::read_tag(source, scratch, indexRow.targetTag, definition)
+                || !build_ability_buckets(source,
+                                          scratch,
+                                          std::span<const std::byte>{definition},
+                                          blob,
+                                          selection,
+                                          row)) {
+                continue;
+            }
+            output[count++] = row;
+            }
+           }
+          }
+        }
     }
     if (count == 0) {
         report_ability_failure("empty", account.characterCount, rows.count, output.size());

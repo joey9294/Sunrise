@@ -173,7 +173,7 @@ void clear_game_targets() noexcept {
     (void)hooks::spawn::install();
     // Noclip owns its Havok-step target, so a patch-specific miss cannot disable teleport.
     (void)hooks::noclip::install();
-    // Attaches whether or not the feature is on, so the interface can enable it without a restart.
+    // Attach at startup so the Player page can toggle infinite ammo without a restart.
     (void)hooks::infinite_ammo::install();
     (void)hooks::queuez::install();
     // The bitmap reference guard puts the none sentinel in place of a reference outside tag

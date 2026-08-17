@@ -5,7 +5,11 @@
 IDR_DEFAULT_SETTINGS RCDATA "default_settings.json"
 IDR_IMGUI_LICENSE RCDATA "../vendor/imgui/LICENSE.txt"
 IDR_DETOURS_LICENSE RCDATA "../vendor/detours/LICENSE.md"
-IDR_LOGO_SHEET RCDATA "logo_sheet.png"
+// Open-source builds use an empty placeholder because extracted game artwork is not distributed.
+// Replace this resource with a locally generated SD2ICON1 pack to enable item pictures.
+IDR_PANOPTES_ICONS RCDATA "panoptes_icons.empty.pack"
+IDR_PANOPTES_UNKNOWN RCDATA "panoptes_unknown.png"
+IDR_PANOPTES_NAMES RCDATA "panoptes_names.pack"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION SUNRISE_VER_MAJOR, SUNRISE_VER_MINOR, SUNRISE_VER_PATCH, SUNRISE_VER_BUILD

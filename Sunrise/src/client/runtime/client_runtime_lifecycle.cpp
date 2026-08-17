@@ -104,6 +104,7 @@ bool shutdown() noexcept {
     runtime::g_platformStage = runtime::StageState::pending;
     ui::runtime::shutdown();
     player::shutdown();
+
     spawn::shutdown();
     movement::shutdown();
     core::log::write(core::log::Channel::client, core::log::Level::info, "ev=shutdown result=ok");

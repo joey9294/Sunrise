@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <type_traits>
 
@@ -109,6 +110,50 @@ struct Result {
     std::array<Row, kRowCapacity> rows{};
     std::size_t rowCount{};
 };
+
+/**
+ * Copies text into a fixed buffer, truncating rather than overrunning.
+ * @param text Source text.
+ * @param buffer Destination, cleared first.
+ * @param length Receives the stored length.
+ */
+constexpr void store_text(std::string_view text, std::span<char> buffer, std::size_t& length) noexcept {
+    length = text.size() < buffer.size() ? text.size() : buffer.size() - 1;
+    for (std::size_t index = 0; index < buffer.size(); ++index) {
+        buffer[index] = index < length ? text[index] : '\0';
+    }
+}
+
+/**
+ * Sets the sentence a result reports to a reader.
+ * @param result Result to fill.
+ * @param summary Sentence, truncated when it does not fit.
+ */
+constexpr void set_summary(Result& result, std::string_view summary) noexcept {
+    store_text(summary, result.summary, result.summaryLength);
+}
+
+/**
+ * Appends one named value to a result.
+ *
+ * Rows are what a machine caller reads, so a handler that has an answer should add it here even
+ * when the summary already states it in prose.
+ *
+ * @param result Result to append to.
+ * @param key Row name.
+ * @param value Row value.
+ * @return True when the row fit.
+ */
+constexpr bool add_row(Result& result, std::string_view key, const Value& value) noexcept {
+    if (result.rowCount >= kRowCapacity) {
+        return false;
+    }
+    Row& row = result.rows[result.rowCount];
+    store_text(key, row.key, row.keyLength);
+    row.value = value;
+    ++result.rowCount;
+    return true;
+}
 
 /** @param type Domain to name. @return Its lowercase wire name, as help and completion print it. */
 [[nodiscard]] constexpr std::string_view type_name(Type type) noexcept {

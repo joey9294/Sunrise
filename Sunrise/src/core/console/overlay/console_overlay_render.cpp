@@ -1,12 +1,18 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <imgui.h>
 #include <string_view>
 
+#include "../../../../resources/resource.h"
+#include "../../ui/components/logo/ui_logo_component.h"
+#include "../../ui/scaling/dpi/ui_dpi_scaling.h"
+#include "../output/console_format.h"
 #include "../output/console_output.h"
 #include "../parser/console_line_parse.h"
 #include "../queue/console_queue.h"
+#include "../registry/console_registry.h"
 #include "console_builtins.h"
 #include "console_completion.h"
 #include "console_history.h"
@@ -17,8 +23,8 @@ namespace {
 
 /** The console covers the top of the viewport, which is where a reader expects one to drop. */
 constexpr float kViewportHeightShare = 0.45F;
-/** Zero size lets the scrollback child take every row left above the prompt. */
-constexpr ImVec2 kAutomaticChildSize{0.0F, 0.0F};
+/** Suggestions shown at once. Past this the list stops narrowing anything and starts hiding it. */
+constexpr std::size_t kVisibleSuggestions = 8;
 /** 1 scrolls to the bottom edge of the newest line. */
 constexpr float kScrollBottom = 1.0F;
 /** The prompt is the whole width, so a long line is edited without a horizontal scroll. */
@@ -29,6 +35,15 @@ constexpr char kPromptLabel[] = "##console_input";
 constexpr char kScrollbackId[] = "##console_scrollback";
 /** Window title, hidden by the flags but still the window's identity. */
 constexpr char kWindowTitle[] = "Sunrise Console##console_window";
+/** 32 authored pixels make the mark as tall as the two rows beside it, as the HUD card does. */
+constexpr float kHeaderLogoExtent = 32.0F;
+/** The console names itself with the same wordmark every other surface carries. */
+constexpr char kWordmark[] = "SUNRISE";
+/** The lighter half of the brand gradient, so the wordmark reads as part of the mark. */
+constexpr ImVec4 kWordmarkTint{0.965F, 0.886F, 0.478F, 1.0F};
+/** Shown once, the first time the console opens, so the first screen is never blank. */
+constexpr char kBannerHint[] = "Start typing to see what exists. Tab takes the highlighted name, "
+                               "Up and Down move through it.";
 
 /**
  * The console owns its whole strip, so nothing about it is moved, resized or remembered.
@@ -42,7 +57,7 @@ constexpr ImGuiWindowFlags kWindowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWin
                                           | ImGuiWindowFlags_NoSavedSettings;
 /** A border separates the lines already answered from the line being typed. */
 constexpr ImGuiChildFlags kScrollbackFlags = ImGuiChildFlags_Borders;
-/** Enter submits, and the two callbacks carry history and completion. */
+/** Enter submits, and the two callbacks carry selection and insertion. */
 constexpr ImGuiInputTextFlags kInputFlags = ImGuiInputTextFlags_EnterReturnsTrue
                                             | ImGuiInputTextFlags_CallbackHistory
                                             | ImGuiInputTextFlags_CallbackCompletion;
@@ -55,16 +70,28 @@ constexpr ImVec4 kAnswerTint{0.90F, 0.90F, 0.92F, 1.0F};
 constexpr ImVec4 kFailureTint{0.93F, 0.44F, 0.40F, 1.0F};
 /** What the console says about itself sits apart from what a module answered. */
 constexpr ImVec4 kNoticeTint{0.55F, 0.75F, 0.95F, 1.0F};
+/** An unselected suggestion is quiet enough that the selected one reads as the answer. */
+constexpr ImVec4 kSuggestionTint{0.58F, 0.62F, 0.70F, 1.0F};
+/** The selected suggestion carries the accent, which is what the pages use for a selection. */
+constexpr ImVec4 kSelectedTint{0.95F, 0.42F, 0.16F, 1.0F};
+/** A type, a range or a current value is context, never the thing being read. */
+constexpr ImVec4 kDetailTint{0.48F, 0.53F, 0.61F, 1.0F};
 
 /** The line being edited. */
 std::array<char, parser::kLineCapacity> g_input{};
 History g_history{};
+/** Matches for the name being typed, refreshed from the buffer each frame. */
+Completion g_suggestions{};
+/** Which match is highlighted. It is what Tab inserts. */
+std::size_t g_selected{};
 /** Set while the prompt should take focus, which is the frame after the console opens. */
 bool g_focusPrompt{true};
 /** Set while the scrollback should jump to its newest line. */
 bool g_scrollToBottom{true};
 /** Visibility from the previous frame, so opening can be told from staying open. */
 bool g_wasVisible{};
+/** The banner is a greeting, so it is written once per process rather than once per opening. */
+bool g_bannerWritten{};
 
 /** @param kind Line kind to tint. @return Its color. */
 [[nodiscard]] const ImVec4& tint_for(output::LineKind kind) noexcept {
@@ -81,6 +108,37 @@ bool g_wasVisible{};
     return kAnswerTint;
 }
 
+/** @return What is currently typed. */
+[[nodiscard]] std::string_view typed_line() noexcept {
+    return {g_input.data()};
+}
+
+/**
+ * @return True while the reader is still typing an entry name.
+ *
+ * A space ends the name and starts the arguments, which is also what turns the suggestion list
+ * off and hands the arrow keys back to the history.
+ */
+[[nodiscard]] bool naming() noexcept {
+    return typed_line().find(' ') == std::string_view::npos;
+}
+
+/** @return True while a suggestion list is on screen and owns the arrow keys. */
+[[nodiscard]] bool list_open() noexcept {
+    return naming() && g_suggestions.count != 0;
+}
+
+/** Refreshes the matches for what is typed, keeping the highlight inside them. */
+void refresh_suggestions() noexcept {
+    const std::string_view typed = typed_line();
+    // An empty line offers everything, so opening the console already shows what exists rather
+    // than waiting for a first letter to prove the list is there.
+    g_suggestions = naming() ? suggest(typed) : Completion{};
+    if (g_selected >= g_suggestions.count) {
+        g_selected = 0;
+    }
+}
+
 /** Receives one drained result on the render thread and prints it. */
 void on_result(std::uint64_t, const Result& result) noexcept {
     output::write_result(result);
@@ -95,53 +153,52 @@ void replace_input(ImGuiInputTextCallbackData* data, std::string_view line) noex
     }
 }
 
-/** Applies one history step to the line being edited. */
-void apply_history(ImGuiInputTextCallbackData* data) noexcept {
+/**
+ * Moves the highlight, or walks the history when no list is open.
+ *
+ * The arrow keys do both jobs because a console needs both and has one pair of keys. Which job
+ * they are doing is never ambiguous: the list is on screen or it is not.
+ */
+void apply_arrow(ImGuiInputTextCallbackData* data) noexcept {
+    const bool up = data->EventKey == ImGuiKey_UpArrow;
+    if (list_open()) {
+        if (up) {
+            g_selected = g_selected == 0 ? g_suggestions.count - 1 : g_selected - 1;
+        } else {
+            g_selected = g_selected + 1 >= g_suggestions.count ? 0 : g_selected + 1;
+        }
+        return;
+    }
+
     std::string_view recalled{};
-    const bool moved = data->EventKey == ImGuiKey_UpArrow ? step_back(g_history, recalled)
-                                                          : step_forward(g_history, recalled);
+    const bool moved = up ? step_back(g_history, recalled) : step_forward(g_history, recalled);
     if (moved) {
         replace_input(data, recalled);
     }
 }
 
-/**
- * Completes the name being typed as far as every match agrees.
- *
- * Only the first token is completed. The rest of a line is a value, and what a value may be is
- * already stated by the entry's own help rather than guessable from a prefix.
- */
+/** Takes the highlighted name, or completes as far as every match agrees when none is listed. */
 void apply_completion(ImGuiInputTextCallbackData* data) noexcept {
-    const std::string_view typed{data->Buf, static_cast<std::size_t>(data->BufTextLen)};
-    if (typed.find(' ') != std::string_view::npos) {
+    if (!naming()) {
         return;
     }
-
-    const Completion found = complete(typed);
-    if (found.count == 0) {
+    if (g_suggestions.count != 0 && g_selected < g_suggestions.count) {
+        // A name plus its space, because every entry that takes an argument needs one next.
+        const std::string_view name = g_suggestions.matches[g_selected];
+        replace_input(data, name);
+        data->InsertChars(data->BufTextLen, " ");
         return;
     }
-    if (found.shared.size() > typed.size()) {
-        replace_input(data, found.shared);
+    const Completion prefixed = complete(typed_line());
+    if (prefixed.count != 0 && prefixed.shared.size() > typed_line().size()) {
+        replace_input(data, prefixed.shared);
     }
-    if (found.count == 1) {
-        return;
-    }
-    // More than one name still fits, so the reader is shown what they are choosing between
-    // instead of being left with a prefix that stopped growing for no visible reason.
-    for (std::size_t index = 0; index < found.count; ++index) {
-        output::write(output::LineKind::notice, found.matches[index]);
-    }
-    if (found.truncated) {
-        output::write(output::LineKind::notice, "...and more. Type another letter to narrow it.");
-    }
-    g_scrollToBottom = true;
 }
 
-/** Routes one Dear ImGui input callback to history or completion. */
+/** Routes one Dear ImGui input callback. */
 int input_callback(ImGuiInputTextCallbackData* data) noexcept {
     if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
-        apply_history(data);
+        apply_arrow(data);
     } else if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
         apply_completion(data);
     }
@@ -158,8 +215,6 @@ void submit_line(std::string_view line) noexcept {
     if (outcome.status != Status::ok) {
         Result rejected{};
         rejected.status = outcome.status;
-        // The reader is told which name failed, because a mistyped line is most often a mistyped
-        // name and quoting it back is what makes the mistake visible.
         if (outcome.status == Status::unknownName && !outcome.requestedName.empty()) {
             Value named{};
             named.type = Type::text;
@@ -168,9 +223,7 @@ void submit_line(std::string_view line) noexcept {
         }
         output::write_result(rejected);
         if (outcome.status == Status::unknownName && !outcome.requestedName.empty()) {
-            // A refused name is where a reader most needs the right one. The search is by
-            // containment, since someone who typed `help` is reaching for `console.help` and no
-            // prefix match can get them there.
+            // A refused name is where a reader most needs the right one.
             const Completion nearby = suggest(outcome.requestedName);
             for (std::size_t index = 0; index < nearby.count; ++index) {
                 output::write(output::LineKind::notice, nearby.matches[index]);
@@ -200,15 +253,194 @@ void draw_scrollback() noexcept {
     }
 }
 
+/** Writes one detail run after the current item, on the same line. */
+void draw_detail(std::string_view text) noexcept {
+    if (text.empty()) {
+        return;
+    }
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Text, kDetailTint);
+    ImGui::TextUnformatted(text.data(), text.data() + text.size());
+    ImGui::PopStyleColor();
+}
+
+/** Draws the type, range and, for a variable, the value it currently holds. */
+void draw_entry_detail(const registry::Descriptor& entry) noexcept {
+    std::array<char, output::kScrollbackLineCapacity> usage{};
+    std::size_t usageLength = 0;
+    output::format_usage(entry, usage, usageLength);
+    // The usage repeats the name, which is already on the line, so only the tail is shown.
+    const std::string_view whole{usage.data(), usageLength};
+    const std::size_t tail = whole.size() > entry.name.size() ? entry.name.size() : whole.size();
+    draw_detail(whole.substr(tail));
+
+    if (entry.kind != registry::Kind::variable || entry.read == nullptr) {
+        return;
+    }
+    Value current{};
+    if (!entry.read(current)) {
+        return;
+    }
+    current.type = entry.type;
+    std::array<char, output::kFormattedValueCapacity> printed{};
+    std::size_t printedLength = 0;
+    output::format_value(current, printed, printedLength);
+
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Text, kDetailTint);
+    ImGui::TextUnformatted("=");
+    ImGui::PopStyleColor();
+    draw_detail({printed.data(), printedLength});
+}
+
+/** Draws the matches for the name being typed, with the highlighted one carrying the accent. */
+void draw_suggestions() noexcept {
+    const std::size_t shown =
+        g_suggestions.count < kVisibleSuggestions ? g_suggestions.count : kVisibleSuggestions;
+    // The window slides with the highlight, so moving past the last visible row scrolls the list
+    // instead of moving a highlight nobody can see.
+    const std::size_t first = g_selected < shown ? 0 : g_selected - shown + 1;
+    for (std::size_t offset = 0; offset < shown; ++offset) {
+        const std::size_t index = first + offset;
+        if (index >= g_suggestions.count) {
+            break;
+        }
+        const bool selected = index == g_selected;
+        ImGui::PushStyleColor(ImGuiCol_Text, selected ? kSelectedTint : kSuggestionTint);
+        const std::string_view name = g_suggestions.matches[index];
+        ImGui::TextUnformatted(name.data(), name.data() + name.size());
+        ImGui::PopStyleColor();
+
+        registry::Descriptor entry{};
+        if (registry::find(name, entry)) {
+            if (selected) {
+                draw_entry_detail(entry);
+                draw_detail(entry.help);
+            } else {
+                draw_detail(entry.help);
+            }
+        }
+    }
+    if (g_suggestions.count > shown) {
+        std::array<char, 64> more{};
+        const int written = std::snprintf(
+            more.data(), more.size(), "%zu of %zu", g_selected + 1, g_suggestions.count);
+        if (written > 0) {
+            draw_detail({more.data(), static_cast<std::size_t>(written)});
+        }
+    }
+}
+
+/**
+ * Draws the signature of the entry being given arguments, marking the one being typed.
+ *
+ * Once a name is settled the suggestion list has nothing left to offer, and what a reader needs
+ * instead is which argument comes next and what it may hold.
+ */
+void draw_signature() noexcept {
+    const std::string_view typed = typed_line();
+    const std::size_t nameEnd = typed.find(' ');
+    if (nameEnd == std::string_view::npos) {
+        return;
+    }
+    registry::Descriptor entry{};
+    if (!registry::find(typed.substr(0, nameEnd), entry)) {
+        return;
+    }
+
+    // Tokens already finished say which argument is being typed now.
+    std::size_t typedArguments = 0;
+    for (std::size_t index = nameEnd; index < typed.size(); ++index) {
+        const bool starts = typed[index] != ' ' && (index == 0 || typed[index - 1] == ' ');
+        if (starts) {
+            ++typedArguments;
+        }
+    }
+    const std::size_t current = typedArguments == 0 ? 0 : typedArguments - 1;
+
+    ImGui::PushStyleColor(ImGuiCol_Text, kDetailTint);
+    ImGui::TextUnformatted(entry.name.data(), entry.name.data() + entry.name.size());
+    ImGui::PopStyleColor();
+
+    if (entry.kind == registry::Kind::variable) {
+        draw_entry_detail(entry);
+        return;
+    }
+    for (std::size_t index = 0; index < entry.arguments.size(); ++index) {
+        const registry::Argument& argument = entry.arguments[index];
+        std::array<char, 96> text{};
+        const int written = std::snprintf(text.data(),
+                                          text.size(),
+                                          "<%.*s:%.*s>",
+                                          static_cast<int>(argument.name.size()),
+                                          argument.name.data(),
+                                          static_cast<int>(type_name(argument.type).size()),
+                                          type_name(argument.type).data());
+        if (written <= 0) {
+            continue;
+        }
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, index == current ? kSelectedTint : kDetailTint);
+        ImGui::TextUnformatted(text.data(), text.data() + written);
+        ImGui::PopStyleColor();
+    }
+    if (current < entry.arguments.size()) {
+        draw_detail(entry.arguments[current].help);
+    }
+}
+
+/**
+ * Draws the wordmark row the console opens under.
+ *
+ * The logo art is the one the HUD card already draws, tinted with the same gradient, so the
+ * console is recognisably the same tool rather than a second look at it. It is drawn rather than
+ * written, because the interface font is proportional and any lettering built out of characters
+ * would set ragged.
+ */
+void draw_header() noexcept {
+    const float extent = ui::scaling::dpi::pixels(kHeaderLogoExtent);
+    if (ui::components::logo::draw(extent)) {
+        ImGui::SameLine();
+    }
+    ImGui::BeginGroup();
+    ImGui::PushStyleColor(ImGuiCol_Text, kWordmarkTint);
+    ImGui::TextUnformatted(kWordmark);
+    ImGui::PopStyleColor();
+    ImGui::TextDisabled("%s console", SUNRISE_VER_STRING);
+    ImGui::EndGroup();
+    ImGui::Separator();
+}
+
+/** Writes the greeting, once, so the first screen is never blank. */
+void write_banner() noexcept {
+    if (g_bannerWritten) {
+        return;
+    }
+    g_bannerWritten = true;
+    const registry::RegistrySnapshot view = registry::snapshot();
+    std::array<char, output::kScrollbackLineCapacity> line{};
+    const int written = std::snprintf(line.data(),
+                                      line.size(),
+                                      "Sunrise console. %zu commands and variables.",
+                                      view.entries().size());
+    if (written > 0) {
+        output::write(output::LineKind::notice, {line.data(), static_cast<std::size_t>(written)});
+    }
+    output::write(output::LineKind::notice, kBannerHint);
+}
+
 } // namespace
 
 /** Publishes the console's own entries and clears its editing state. */
 bool initialize() noexcept {
     g_input = {};
     g_history = History{};
+    g_suggestions = Completion{};
+    g_selected = 0;
     g_focusPrompt = true;
     g_scrollToBottom = true;
     g_wasVisible = false;
+    g_bannerWritten = false;
     return builtins::initialize();
 }
 
@@ -227,7 +459,11 @@ bool render(bool visible) noexcept {
         g_focusPrompt = true;
         g_scrollToBottom = true;
         g_wasVisible = true;
+        // Written on the first opening rather than at boot, because the modules publish their
+        // entries after Core does and the count would otherwise be short.
+        write_banner();
     }
+    refresh_suggestions();
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImVec2 size{viewport->WorkSize.x, viewport->WorkSize.y * kViewportHeightShare};
@@ -237,13 +473,29 @@ bool render(bool visible) noexcept {
         ImGui::End();
         return true;
     }
+    draw_header();
 
-    const float promptHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
-    const ImVec2 scrollbackSize{kAutomaticChildSize.x, -promptHeight};
-    if (ImGui::BeginChild(kScrollbackId, scrollbackSize, kScrollbackFlags)) {
+    // The scrollback takes what the prompt and its helper rows leave, so the rows appear by
+    // taking space from the history rather than by pushing the prompt off the strip.
+    const std::size_t helperRows =
+        list_open() ? (g_suggestions.count < kVisibleSuggestions ? g_suggestions.count
+                                                                 : kVisibleSuggestions)
+                    : 0;
+    const float rowHeight = ImGui::GetTextLineHeightWithSpacing();
+    const float headerHeight = ui::scaling::dpi::pixels(kHeaderLogoExtent) + rowHeight;
+    const float reserved = headerHeight + ImGui::GetFrameHeightWithSpacing()
+                           + (static_cast<float>(helperRows) * rowHeight)
+                           + (list_open() ? 0.0F : rowHeight);
+    if (ImGui::BeginChild(kScrollbackId, ImVec2{0.0F, -reserved}, kScrollbackFlags)) {
         draw_scrollback();
     }
     ImGui::EndChild();
+
+    if (list_open()) {
+        draw_suggestions();
+    } else {
+        draw_signature();
+    }
 
     if (g_focusPrompt) {
         ImGui::SetKeyboardFocusHere();
@@ -252,11 +504,12 @@ bool render(bool visible) noexcept {
     ImGui::SetNextItemWidth(kFullWidth);
     if (ImGui::InputText(
             kPromptLabel, g_input.data(), g_input.size(), kInputFlags, &input_callback)) {
-        const std::string_view line{g_input.data()};
+        const std::string_view line = typed_line();
         if (!line.empty()) {
             submit_line(line);
         }
         g_input = {};
+        g_selected = 0;
         // Enter gives focus away, so it is taken back or the next line would need a click.
         g_focusPrompt = true;
     }
@@ -270,6 +523,7 @@ void shutdown() noexcept {
     builtins::shutdown();
     g_input = {};
     g_history = History{};
+    g_suggestions = Completion{};
     g_wasVisible = false;
 }
 

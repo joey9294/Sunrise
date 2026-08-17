@@ -101,8 +101,6 @@ bool g_bannerWritten{};
 bool g_browseAll{};
 /** Set while the list offers values for an argument rather than names of entries. */
 bool g_offeringValues{};
-/** Where the token being typed starts, which is what a chosen value replaces. */
-std::size_t g_tokenStart{};
 
 /** @param kind Line kind to tint. @return Its color. */
 [[nodiscard]] const ImVec4& tint_for(output::LineKind kind) noexcept {
@@ -221,7 +219,6 @@ void refresh_suggestions() noexcept {
     // rows on a wall of every name. It opens on the first letter, or when the reader asks for the
     // whole list from an empty prompt.
     const bool wanted = !typed.empty() || g_browseAll;
-    g_tokenStart = token_start();
     g_offeringValues = false;
     if (naming()) {
         g_suggestions = wanted ? suggest(typed) : Completion{};
@@ -287,9 +284,15 @@ void apply_completion(ImGuiInputTextCallbackData* data) noexcept {
             return;
         }
         // Only the token being typed is replaced, so the name and the arguments before it stay.
+        // Its start is measured from the buffer the callback was handed, not from the one the
+        // list was built against a frame earlier: a space typed in between would move it, and
+        // deleting from the older offset would take the entry name with it.
+        const std::string_view live{data->Buf, static_cast<std::size_t>(data->BufTextLen)};
+        const std::size_t lastSpace = live.find_last_of(' ');
+        const auto start =
+            static_cast<int>(lastSpace == std::string_view::npos ? 0 : lastSpace + 1);
         const std::string_view value = g_suggestions.matches[g_selected];
-        data->DeleteChars(static_cast<int>(g_tokenStart),
-                          data->BufTextLen - static_cast<int>(g_tokenStart));
+        data->DeleteChars(start, data->BufTextLen - start);
         data->InsertChars(data->BufTextLen, value.data(), value.data() + value.size());
         return;
     }

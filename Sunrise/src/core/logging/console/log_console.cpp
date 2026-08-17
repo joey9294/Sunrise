@@ -20,8 +20,7 @@ constexpr std::array<std::string_view, 5> kLevelChoices{"error", "warn", "info",
  * The channel is a template argument because a console callback carries no context of its own,
  * and one function per channel written out by hand would be the same body five times.
  */
-template <Channel C>
-[[nodiscard]] bool read_level(entry::Value& output) noexcept {
+template <Channel C> [[nodiscard]] bool read_level(entry::Value& output) noexcept {
     Level current{};
     if (!level_of(C, current)) {
         return false;
@@ -33,8 +32,7 @@ template <Channel C>
 }
 
 /** Writes one channel's threshold. The parser has already checked the word against the choices. */
-template <Channel C>
-[[nodiscard]] entry::Status write_level(const entry::Value& value) noexcept {
+template <Channel C> [[nodiscard]] entry::Status write_level(const entry::Value& value) noexcept {
     Level level{};
     if (!level_from_name({value.text.data(), value.textLength}, level)) {
         return entry::Status::badArgument;
@@ -44,7 +42,8 @@ template <Channel C>
 
 /** Builds one channel's descriptor. */
 template <Channel C>
-[[nodiscard]] registry::Descriptor level_entry(std::string_view name, std::string_view help) noexcept {
+[[nodiscard]] registry::Descriptor level_entry(std::string_view name,
+                                               std::string_view help) noexcept {
     registry::Descriptor descriptor{};
     descriptor.name = name;
     descriptor.help = help;

@@ -12,8 +12,8 @@ namespace sunrise::core::console::parser {
 /**
  * Storage for one typed line.
  *
- * A line names one entry and its arguments, and the widest of those is a destination name, so
- * this is far above anything the wired entries can require.
+ * A line is an entry name and its arguments, and both are readable words rather than blobs, so
+ * this sits far above anything a reader has cause to type.
  */
 inline constexpr std::size_t kLineCapacity = 256;
 /** Tokens one line may carry: the entry name, then one per declared argument. */
@@ -121,8 +121,8 @@ static_assert(tokenize("movement.fly_speed  20").count == 2);
 static_assert(tokenize("  movement.fly_speed 20  ").items[0] == "movement.fly_speed");
 static_assert(tokenize("movement.fly_speed 20").items[1] == "20");
 // A quoted run stays one token and loses its quotes.
-static_assert(tokenize("activity.goto \"the tangled shore\"").count == 2);
-static_assert(tokenize("activity.goto \"the tangled shore\"").items[1] == "the tangled shore");
+static_assert(tokenize("log.core \"two words\"").count == 2);
+static_assert(tokenize("log.core \"two words\"").items[1] == "two words");
 static_assert(tokenize("a \"b c\" d").count == 3);
 static_assert(tokenize("a \"b c\" d").items[2] == "d");
 static_assert(tokenize("a \"unclosed").unterminatedQuote);

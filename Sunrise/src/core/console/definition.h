@@ -31,8 +31,10 @@ inline constexpr std::size_t kChoiceCapacity = 16;
 /** Rows one result reports. A caller wanting more should ask a narrower question. */
 inline constexpr std::size_t kRowCapacity = 16;
 /**
- * Storage for one text value. Destination package names are the longest text this surface
- * carries, and the content tables cap those at 40 bytes.
+ * Storage for one text value.
+ *
+ * A text value is one token a reader types, so this is sized to hold a long one rather than to
+ * the longest any module happens to publish today, which the next module would change.
  */
 inline constexpr std::size_t kTextCapacity = 64;
 

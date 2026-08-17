@@ -129,6 +129,16 @@ struct CharacterState {
     account::inventory::CharacterItems inventory;
     /** Next row generation; equip transactions consume two values for the two moved items. */
     std::uint32_t nextInventorySerial{};
+    /** Runtime-selected movement ability entry. Defaults to entry 4. */
+    std::uint8_t movementAbilityEntry{kDefaultMovementAbilityEntry};
+    /** Runtime-selected grenade ability entry. Defaults to entry 7. */
+    std::uint8_t grenadeAbilityEntry{kDefaultGrenadeAbilityEntry};
+    /** Runtime-selected super ability entry. Defaults to entry 10. */
+    std::uint8_t superAbilityEntry{kDefaultSuperAbilityEntry};
+    /** Runtime-selected melee ability entry. Defaults to entry 11. */
+    std::uint8_t meleeAbilityEntry{kDefaultMeleeAbilityEntry};
+    /** Runtime-selected class ability entry. Defaults to entry 2. */
+    std::uint8_t classAbilityEntry{kDefaultClassAbilityEntry};
 };
 
 /** Account identity shared by backend object families. */

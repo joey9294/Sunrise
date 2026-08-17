@@ -9,6 +9,7 @@
 /** The next module-local RCDATA identifier holds the animated logo sprite sheet, as a PNG. */
 #define IDR_LOGO_SHEET 104
 
+
 /** The four numeric fields of the version resource, in FILEVERSION order. */
 #define SUNRISE_VER_MAJOR 0
 #define SUNRISE_VER_MINOR 3

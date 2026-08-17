@@ -6,6 +6,7 @@
 #include "../../../core/ui/modules/ui_module_descriptor.h"
 #include "../activity_override/activity_override_panel.h"
 #include "../loadout/loadout_panel.h"
+
 #include "../spawn/spawn_panel.h"
 
 namespace sunrise::server::ui::runtime {
@@ -23,6 +24,7 @@ constexpr std::string_view kLoadoutDisplayName = "Loadout";
 core::ui::modules::registry::PageRegistration g_overridePage;
 core::ui::modules::registry::PageRegistration g_spawnPage;
 core::ui::modules::registry::PageRegistration g_loadoutPage;
+
 
 } // namespace
 
@@ -48,12 +50,14 @@ bool initialize() noexcept {
                                 kLoadoutStableId,
                                 kLoadoutDisplayName,
                                 &loadout::draw);
+
     return true;
 }
 
 /** Removes the Server module from the Core UI registry. */
 void shutdown() noexcept {
     g_loadoutPage.release(&loadout::shutdown);
+
     g_spawnPage.release();
     g_overridePage.release();
 }

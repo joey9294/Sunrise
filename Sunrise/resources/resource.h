@@ -9,6 +9,7 @@
 #define IDR_PANOPTES_ICONS 104
 #define IDR_PANOPTES_UNKNOWN 105
 #define IDR_PANOPTES_NAMES 106
+
 /** The four numeric fields of the version resource, in FILEVERSION order. */
 #define SUNRISE_VER_MAJOR 0
 #define SUNRISE_VER_MINOR 3

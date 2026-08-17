@@ -209,6 +209,7 @@
     <ClCompile Include="src\client\movement\movement_settings_store.cpp" />
     <ClCompile Include="src\client\ui\player\player_panel.cpp" />
     <ClCompile Include="src\client\player\player_settings_store.cpp" />
+
     <ClCompile Include="src\client\spawn\spawn_keybind_store.cpp" />
     <ClCompile Include="src\client\content\entity_names\entity_name_cache.cpp" />
     <ClCompile Include="src\client\content\entity_names\localized_aliases.cpp" />
@@ -482,6 +483,7 @@
     <ClCompile Include="src\server\ui\spawn\spawn_panel.cpp" />
     <ClCompile Include="src\server\ui\loadout\loadout_panel.cpp" />
     <ClCompile Include="src\server\ui\loadout\panoptes_icons.cpp" />
+
     <ClCompile Include="src\server\transport\bap_listener.cpp" />
     <ClCompile Include="src\server\bap\bap_route.cpp" />
     <ClCompile Include="src\server\bap\plaintext.cpp" />
@@ -774,6 +776,7 @@
     <ClInclude Include="src\client\movement\movement_settings_store.h" />
     <ClInclude Include="src\client\ui\player\player_panel.h" />
     <ClInclude Include="src\client\player\player_settings_store.h" />
+
     <ClInclude Include="src\client\spawn\spawn_keybind_store.h" />
     <ClInclude Include="src\client\content\entity_names\entity_name_cache.h" />
     <ClInclude Include="src\client\content\entity_names\localized_aliases.h" />
@@ -964,6 +967,7 @@
     <ClInclude Include="src\server\ui\spawn\spawn_panel.h" />
     <ClInclude Include="src\server\ui\loadout\loadout_panel.h" />
     <ClInclude Include="src\server\ui\loadout\panoptes_icons.h" />
+
     <ClInclude Include="src\server\bap\runtime.h" />
     <ClInclude Include="src\server\bap\internal.h" />
     <ClInclude Include="src\server\bap\encrypted\internal.h" />

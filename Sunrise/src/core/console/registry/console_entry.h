@@ -86,6 +86,7 @@ struct Descriptor {
     std::span<const std::string_view> choices{};
 
     ReadCallback read{};
+    /** Absent on a variable that only reports. Writing one is refused rather than ignored. */
     WriteCallback write{};
 
     /** Arguments a command declares, in the order it reads them. */
@@ -116,9 +117,10 @@ struct Descriptor {
         return false;
     }
     if (descriptor.kind == Kind::variable) {
-        // A write-only variable would show a value the console could never print, so both halves
-        // are required even for a value a module means to be read rarely.
-        return descriptor.read != nullptr && descriptor.write != nullptr;
+        // A read is required and a write is not. A write-only variable would show a value the
+        // console could never print, while a read-only one is an ordinary thing to publish: what
+        // a session currently is, rather than what it should be set to.
+        return descriptor.read != nullptr;
     }
     return descriptor.invoke != nullptr && descriptor.arguments.size() <= kArgumentCapacity;
 }

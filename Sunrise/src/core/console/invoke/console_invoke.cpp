@@ -25,8 +25,10 @@ void run_read(const registry::Descriptor& entry, Result& output) noexcept {
  */
 void run_write(const registry::Descriptor& entry, const Value& value, Result& output) noexcept {
     if (entry.write == nullptr) {
-        output.status = Status::failed;
-        set_summary(output, "The value could not be written.");
+        // The variable reports rather than configures. Refusing names that plainly, instead of
+        // accepting the line and changing nothing.
+        output.status = Status::refused;
+        set_summary(output, "This value only reports; it cannot be set.");
         return;
     }
     const Status written = entry.write(value);

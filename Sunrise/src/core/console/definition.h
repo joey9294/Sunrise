@@ -1,0 +1,157 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+#include <type_traits>
+
+namespace sunrise::core::console {
+
+/**
+ * Entries the fixed registry holds. Every wired module publishes its own commands and variables
+ * into this one table, so the bound covers their sum rather than any single module.
+ */
+inline constexpr std::size_t kEntryCapacity = 128;
+/**
+ * Storage for one entry name, which is always `module.member`. Both halves are readable words
+ * rather than abbreviations, so this leaves room for a long pair and its null.
+ */
+inline constexpr std::size_t kNameCapacity = 48;
+/**
+ * Storage for one help line. The settings headers already justify each value in a sentence, and
+ * this is what carries such a sentence over unshortened.
+ */
+inline constexpr std::size_t kHelpCapacity = 192;
+/** Arguments one command declares. Past this a command is really two commands. */
+inline constexpr std::size_t kArgumentCapacity = 4;
+/** Named choices one text entry may offer. It is what bounds an enumerated variable. */
+inline constexpr std::size_t kChoiceCapacity = 16;
+/** Rows one result reports. A caller wanting more should ask a narrower question. */
+inline constexpr std::size_t kRowCapacity = 16;
+/**
+ * Storage for one text value. Destination package names are the longest text this surface
+ * carries, and the content tables cap those at 40 bytes.
+ */
+inline constexpr std::size_t kTextCapacity = 64;
+
+/**
+ * Value domains an entry may declare.
+ *
+ * Every domain reads and writes as a single token, which is what lets the parser split a line on
+ * spaces alone and lets one value print without an escape rule. An enumerated variable is `text`
+ * carrying a choice list, not a domain of its own: that keeps the parser at four cases while
+ * still giving completion and validation everything they need.
+ */
+enum class Type : std::uint8_t {
+    boolean,
+    integer,
+    real,
+    text,
+    count,
+};
+
+/**
+ * One typed value. The member the declared type names is the one that carries meaning; the rest
+ * hold their zero. A plain struct rather than a union keeps this trivially copyable, which is
+ * what lets a result cross the queue by value.
+ */
+struct Value {
+    Type type{Type::boolean};
+    bool boolean{};
+    std::int64_t integer{};
+    double real{};
+    std::array<char, kTextCapacity> text{};
+    std::size_t textLength{};
+};
+
+/**
+ * Outcomes one invocation may report.
+ *
+ * Each names a distinct cause, so a caller decides what to do without reading the summary. That
+ * is what lets a machine consumer share one handler with the on-screen console.
+ */
+enum class Status : std::uint8_t {
+    /** The invocation ran and its rows, if any, are meaningful. */
+    ok,
+    /** No entry carries that name. */
+    unknownName,
+    /** The entry exists but was given a different number of arguments than it declares. */
+    wrongArgumentCount,
+    /** An argument did not read as its declared type. */
+    badArgument,
+    /** An argument read correctly but fell outside the declared bounds or choices. */
+    outOfRange,
+    /** The entry was reached but declined, which is a state problem rather than an input one. */
+    refused,
+    /** The entry accepted the call and the work itself failed. */
+    failed,
+};
+
+/** One named value a result reports. */
+struct Row {
+    std::array<char, kNameCapacity> key{};
+    std::size_t keyLength{};
+    Value value{};
+};
+
+/**
+ * What one invocation reports back.
+ *
+ * The summary is a sentence for a reader; the rows are the same answer in named values. Both are
+ * filled by the same handler so the two consumers never diverge: the console prints the summary
+ * and then the rows, and a machine consumer reads the rows and ignores the prose.
+ */
+struct Result {
+    Status status{Status::ok};
+    std::array<char, kHelpCapacity> summary{};
+    std::size_t summaryLength{};
+    std::array<Row, kRowCapacity> rows{};
+    std::size_t rowCount{};
+};
+
+/** @param type Domain to name. @return Its lowercase wire name, as help and completion print it. */
+[[nodiscard]] constexpr std::string_view type_name(Type type) noexcept {
+    switch (type) {
+    case Type::boolean:
+        return "bool";
+    case Type::integer:
+        return "int";
+    case Type::real:
+        return "float";
+    case Type::text:
+        return "text";
+    case Type::count:
+        break;
+    }
+    return "";
+}
+
+/** @param status Outcome to test. @return True when the invocation reached its handler. */
+[[nodiscard]] constexpr bool reached_handler(Status status) noexcept {
+    return status == Status::ok || status == Status::refused || status == Status::failed;
+}
+
+// Every domain a caller may declare has to print, or help and completion would show a blank type.
+static_assert(!type_name(Type::boolean).empty());
+static_assert(!type_name(Type::integer).empty());
+static_assert(!type_name(Type::real).empty());
+static_assert(!type_name(Type::text).empty());
+// The sentinel is not a domain, so it deliberately has no name.
+static_assert(type_name(Type::count).empty());
+
+// An input rejection never runs a handler, which is what lets a caller retry it unchanged.
+static_assert(!reached_handler(Status::unknownName));
+static_assert(!reached_handler(Status::wrongArgumentCount));
+static_assert(!reached_handler(Status::badArgument));
+static_assert(!reached_handler(Status::outOfRange));
+static_assert(reached_handler(Status::ok));
+static_assert(reached_handler(Status::refused));
+static_assert(reached_handler(Status::failed));
+
+// A name has to outrun the widest text a row may key, or a row key would truncate silently.
+static_assert(kNameCapacity <= kHelpCapacity);
+// A result crosses the queue by value, so it must stay copyable without a destructor.
+static_assert(std::is_trivially_copyable_v<Value>);
+
+} // namespace sunrise::core::console

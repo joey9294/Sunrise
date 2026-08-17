@@ -320,8 +320,10 @@ void present(IDXGISwapChain* swapChain) noexcept {
     }
     ReleaseSRWLockExclusive(&g_rendererLock);
 
-    // The cursor policy calls Win32, so it runs only after the renderer lock is gone.
-    const bool visible = core::ui::runtime::snapshot().visible;
+    // The cursor policy calls Win32, so it runs only after the renderer lock is gone. Both take
+    // one answer rather than a list of surfaces, so Core decides what counts as open and neither
+    // of them has to learn that the console exists.
+    const bool visible = core::ui::runtime::interface_open(core::ui::runtime::snapshot());
     cursor::apply_visibility(visible);
     polled_input::apply_visibility(visible);
     // The game makes its raw-mouse window during startup, so the first tries find nothing.

@@ -94,10 +94,13 @@ LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM word, LPARAM
         // ReleaseCapture sends this synchronously while Dear ImGui owns the renderer lock.
         return forward(original, window, message, word, value);
     }
-    // The toggle key is ours in both states, so the game cannot see half of a press.
-    const bool toggleKey =
-        is_key_message(message)
-        && static_cast<UINT>(word) == core::ui::runtime::snapshot().toggleVirtualKey;
+    // A toggle key is ours in both states, so the game cannot see half of a press. Both bindings
+    // are read from one snapshot: reading them separately could straddle a settings change and
+    // swallow a press for a binding that no longer exists.
+    const core::ui::runtime::VisibilitySnapshot visibility = core::ui::runtime::snapshot();
+    const bool toggleKey = is_key_message(message)
+                           && (static_cast<UINT>(word) == visibility.toggleVirtualKey
+                               || static_cast<UINT>(word) == visibility.consoleToggleVirtualKey);
     if (message == WM_KEYUP || message == WM_SYSKEYUP) {
         (void)core::ui::runtime::toggle_for_key(static_cast<UINT>(word));
     }

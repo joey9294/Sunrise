@@ -44,4 +44,23 @@ Completion complete(std::string_view prefix) noexcept {
     return found;
 }
 
+/** Finds every entry name containing one run of text. */
+Completion suggest(std::string_view needle) noexcept {
+    Completion found{};
+    const registry::RegistrySnapshot view = registry::snapshot();
+
+    for (const registry::Descriptor& entry : view.entries()) {
+        if (entry.name.find(needle) == std::string_view::npos) {
+            continue;
+        }
+        if (found.count >= kCompletionCapacity) {
+            found.truncated = true;
+            break;
+        }
+        found.matches[found.count] = entry.name;
+        ++found.count;
+    }
+    return found;
+}
+
 } // namespace sunrise::core::console::overlay

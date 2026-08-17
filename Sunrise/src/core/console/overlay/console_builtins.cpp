@@ -58,7 +58,7 @@ void run_help(std::span<const Value> arguments, Result& output) noexcept {
     registry::Descriptor entry{};
     if (!registry::find(name, entry)) {
         // The reader named something that does not exist, so the useful answer is what does.
-        const overlay::Completion nearby = overlay::complete(name);
+        const overlay::Completion nearby = overlay::suggest(name);
         output.status = Status::unknownName;
         set_summary(output,
                     nearby.count == 0 ? "No such name."

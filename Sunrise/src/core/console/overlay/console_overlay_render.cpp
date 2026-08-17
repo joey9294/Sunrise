@@ -30,11 +30,16 @@ constexpr char kScrollbackId[] = "##console_scrollback";
 /** Window title, hidden by the flags but still the window's identity. */
 constexpr char kWindowTitle[] = "Sunrise Console##console_window";
 
-/** The console owns its whole strip, so nothing about it is moved, resized or remembered. */
+/**
+ * The console owns its whole strip, so nothing about it is moved, resized or remembered.
+ *
+ * It is deliberately allowed to come to the front. The HUD overlays draw whether a surface is
+ * open or not and sit in the same corner, so a console held behind them would be read through
+ * its own logo card.
+ */
 constexpr ImGuiWindowFlags kWindowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
                                           | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
-                                          | ImGuiWindowFlags_NoSavedSettings
-                                          | ImGuiWindowFlags_NoBringToFrontOnFocus;
+                                          | ImGuiWindowFlags_NoSavedSettings;
 /** A border separates the lines already answered from the line being typed. */
 constexpr ImGuiChildFlags kScrollbackFlags = ImGuiChildFlags_Borders;
 /** Enter submits, and the two callbacks carry history and completion. */
@@ -162,6 +167,15 @@ void submit_line(std::string_view line) noexcept {
             static_cast<void>(add_row(rejected, "name", named));
         }
         output::write_result(rejected);
+        if (outcome.status == Status::unknownName && !outcome.requestedName.empty()) {
+            // A refused name is where a reader most needs the right one. The search is by
+            // containment, since someone who typed `help` is reaching for `console.help` and no
+            // prefix match can get them there.
+            const Completion nearby = suggest(outcome.requestedName);
+            for (std::size_t index = 0; index < nearby.count; ++index) {
+                output::write(output::LineKind::notice, nearby.matches[index]);
+            }
+        }
         return;
     }
     if (queue::submit(outcome.invocation) == queue::kNoTicket) {

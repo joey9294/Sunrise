@@ -41,4 +41,17 @@ struct Completion {
  */
 [[nodiscard]] Completion complete(std::string_view prefix) noexcept;
 
+/**
+ * Finds every entry name containing one run of text.
+ *
+ * Completion matches from the start because that is what a reader is building. A reader who has
+ * already been refused is in the opposite position: they typed `help` and want `console.help`,
+ * which no prefix match can reach. The shared run is not reported, since text found in the middle
+ * of a name says nothing about what to type next.
+ *
+ * @param needle Text an entry name must contain. An empty needle matches everything.
+ * @return The matches, with no shared run.
+ */
+[[nodiscard]] Completion suggest(std::string_view needle) noexcept;
+
 } // namespace sunrise::core::console::overlay

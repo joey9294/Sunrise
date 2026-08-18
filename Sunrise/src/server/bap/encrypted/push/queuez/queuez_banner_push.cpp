@@ -21,30 +21,14 @@ constexpr std::size_t kSkipLineCapacity = 96;
 
 /**
  * Reports the banner move declining to build a frame.
- * Both refusals leave the emblem where it is, so the key is the only way to tell a ladder that was
- * never seeded from one with no root.
+ * The move has 4 separate refusals and all leave the emblem where it is, so the key is the only
+ * way to tell a pick owing nothing from a ladder that was never seeded.
  * @param reason Key naming the refusal.
  */
 void report_skip(const char* reason) noexcept {
     std::array<char, kSkipLineCapacity> line{};
     const int written = std::snprintf(
         line.data(), line.size(), "ev=queuez stage=banner_move result=skip reason=%s", reason);
-    if (written > 0) {
-        core::log::write(core::log::Channel::server,
-                         core::log::Level::warn,
-                         {line.data(), static_cast<std::size_t>(written)});
-    }
-}
-
-/**
- * Reports the banner move or its republish failing to build a frame.
- * @param stage Stage name the caller resolved, so a republish does not report as a move.
- * @param reason Key naming the failure.
- */
-void report_fail(const char* stage, const char* reason) noexcept {
-    std::array<char, kSkipLineCapacity> line{};
-    const int written = std::snprintf(
-        line.data(), line.size(), "ev=queuez stage=%s result=fail reason=%s", stage, reason);
     if (written > 0) {
         core::log::write(core::log::Channel::server,
                          core::log::Level::warn,
@@ -216,10 +200,9 @@ bool append_banner_notification(Scratch& scratch,
 }
 
 /**
- * Appends the family-zero pair that follows an opcode-504 pick.
+ * Appends the family-zero move that follows an opcode-504 pick.
  * The Client holds the objIdx-1 buffer for one character at a time, allocated from the character
- * the anchor names, so the pair moves with the pick or the banner keeps the old emblem. A pick
- * naming the character the pair already holds republishes it in place.
+ * the anchor names, so the pair moves with the pick or the banner keeps the old emblem.
  * @param scratch Lock-owned transform buffers.
  * @param before Queuez state after the family-four move.
  * @param selectedCharacter Character the pick named.
@@ -241,11 +224,14 @@ bool append_banner_move_notification(Scratch& scratch,
     bool publish = false;
     bool incremental = false;
     after = before;
-    // A family zero with no first delivery yet has no ladder to move, and no root to name it with.
+    // A pick that names the character the pair already holds owes nothing, and so does a family
+    // zero that has not had its first delivery yet.
     const char* reason = nullptr;
     if (!queuez::stage_family0_subscription(
             before, selectedCharacter, publish, incremental, after)) {
         reason = "stage";
+    } else if (!publish) {
+        reason = "unchanged";
     } else if (before.family4RootSoid == 0) {
         reason = "no_root";
     }
@@ -254,15 +240,6 @@ bool append_banner_move_notification(Scratch& scratch,
         after = before;
         return false;
     }
-    // A pick naming the character the pair already holds still republishes it: the only body the
-    // Client would otherwise hold is the boot burst's, built before any pick. Nothing is released,
-    // because deleting the key the same frame re-adds tears the family down.
-    const bool republish = !publish;
-    if (republish) {
-        incremental = false;
-        after.family0Version = before.family0Version + 1;
-    }
-    const char* const stage = republish ? "banner_republish" : "banner_move";
     snapshot::Prepared prepared{};
     // A first delivery releases nothing: the Client holds no record for this family yet, so the
     // pair goes out as its own full snapshot instead of as a move off a previous character.
@@ -271,7 +248,9 @@ bool append_banner_move_notification(Scratch& scratch,
                                   after.family0Version,
                                   incremental ? before.family0Character : 0,
                                   prepared)) {
-        report_fail(stage, "prepare");
+        core::log::write(core::log::Channel::server,
+                         core::log::Level::warn,
+                         "ev=queuez stage=banner_move result=fail reason=prepare");
         after = before;
         return false;
     }
@@ -285,12 +264,14 @@ bool append_banner_move_notification(Scratch& scratch,
                               nonce,
                               response,
                               written)) {
-        report_fail(stage, "frame");
+        core::log::write(core::log::Channel::server,
+                         core::log::Level::warn,
+                         "ev=queuez stage=banner_move result=fail reason=frame");
         after = before;
         return false;
     }
     middleware::secure_channel::advance_nonce(nonce);
-    queuez_report::push(stage,
+    queuez_report::push("banner_move",
                         prepared.family.type,
                         objectCount,
                         written - beforeBytes,
@@ -344,12 +325,64 @@ bool append_socket_appearance_refresh_notification(
     if (target.instanceSoid != mutation.targetInstanceSoid) {
         return false;
     }
+    // The "Emotes" collection item's real content carries no native equipment-slot mapping at
+    // all, unlike every other character-scoped item. Kept self-consistent with the loadout
+    // resolver's own fallback: the emote slot's own native number, since that is where it is
+    // equipped.
+    constexpr std::uint8_t kEmoteCollectionNativeSlot = 14;
     state::build_data::items::details::Definition detail{};
     if (!state::build_data::find_configured_item_detail(mutation.targetDefinitionIndex, detail)
         || detail.definitionIndex != mutation.targetDefinitionIndex
         || detail.definitionHash != mutation.targetDefinitionHash
-        || detail.bucketId != mutation.targetBucketId || !detail.equipmentSlot.has_value()
-        || *detail.equipmentSlot < 0
+        || detail.bucketId != mutation.targetBucketId
+        || (detail.equipmentSlot.has_value() && *detail.equipmentSlot < 0)
+        || (detail.equipmentSlot.has_value()
+            && static_cast<std::size_t>(*detail.equipmentSlot)
+                   >= state::build_data::items::details::kEquipmentSlotCount)) {
+        return false;
+    }
+    const std::uint8_t nativeEquipmentSlot = detail.equipmentSlot.has_value()
+                                                 ? static_cast<std::uint8_t>(*detail.equipmentSlot)
+                                                 : kEmoteCollectionNativeSlot;
+    snapshot::Prepared prepared{};
+    if (!snapshot::prepare_character_appearance_refresh(
+            scratch,
+            refresh,
+            mutation.afterCharacter,
+            mutation.characterIndex,
+            nativeEquipmentSlot,
+            true,
+            prepared)) {
+        return false;
+    }
+    return append_appearance_frame(
+        scratch, refresh, prepared, "socket_appearance", key, nonce, response, written);
+}
+
+/** Appends one Family-0 character ability refresh after a subclass selection. */
+bool append_subclass_appearance_refresh_notification(
+    Scratch& scratch,
+    const queuez::CharacterAppearanceRefresh& refresh,
+    const state::PendingSubclassSelection& mutation,
+    std::span<const std::byte, state::kAesKeySize> key,
+    std::array<std::byte, state::kBapNonceSize>& nonce,
+    std::span<std::byte> response,
+    std::size_t& written) noexcept {
+    constexpr std::size_t kSubclassSlot =
+        static_cast<std::size_t>(state::account::inventory::EquipmentSlot::subclass);
+    if (!mutation.prepared || mutation.characterSoid != refresh.characterSoid
+        || kSubclassSlot >= mutation.afterCharacter.equipment.slots.size()
+        || !mutation.afterCharacter.equipment.slots[kSubclassSlot].has_value()
+        || mutation.afterCharacter.equipment.slots[kSubclassSlot]->instanceSoid
+               != mutation.subclassInstanceSoid) {
+        return false;
+    }
+    state::build_data::items::details::Definition detail{};
+    if (!state::build_data::find_configured_item_detail(
+            mutation.subclassDefinitionIndex, detail)
+        || detail.definitionIndex != mutation.subclassDefinitionIndex
+        || detail.definitionHash != mutation.subclassDefinitionHash
+        || !detail.equipmentSlot.has_value() || *detail.equipmentSlot < 0
         || static_cast<std::size_t>(*detail.equipmentSlot)
                >= state::build_data::items::details::kEquipmentSlotCount) {
         return false;
@@ -366,7 +399,7 @@ bool append_socket_appearance_refresh_notification(
         return false;
     }
     return append_appearance_frame(
-        scratch, refresh, prepared, "socket_appearance", key, nonce, response, written);
+        scratch, refresh, prepared, "subclass_appearance", key, nonce, response, written);
 }
 
 /** Appends the Family-3 character-then-roster refresh owed by one equipment mutation. */
@@ -414,6 +447,34 @@ bool append_socket_roster_refresh_notification(Scratch& scratch,
     }
     return append_roster_appearance_frame(
         scratch, refresh, prepared, "socket_roster", key, nonce, response, written);
+}
+
+/** Appends the Family-3 character-only refresh owed by a subclass selection. */
+bool append_subclass_roster_refresh_notification(
+    Scratch& scratch,
+    const queuez::RosterAppearanceRefresh& refresh,
+    const state::PendingSubclassSelection& mutation,
+    std::span<const std::byte, state::kAesKeySize> key,
+    std::array<std::byte, state::kBapNonceSize>& nonce,
+    std::span<std::byte> response,
+    std::size_t& written) noexcept {
+    constexpr std::size_t kSubclassSlot =
+        static_cast<std::size_t>(state::account::inventory::EquipmentSlot::subclass);
+    if (!mutation.prepared || refresh.includeRoster
+        || mutation.characterSoid != refresh.characterSoid
+        || kSubclassSlot >= mutation.afterCharacter.equipment.slots.size()
+        || !mutation.afterCharacter.equipment.slots[kSubclassSlot].has_value()
+        || mutation.afterCharacter.equipment.slots[kSubclassSlot]->instanceSoid
+               != mutation.subclassInstanceSoid) {
+        return false;
+    }
+    snapshot::Prepared prepared{};
+    if (!snapshot::prepare_roster_appearance_refresh(
+            scratch, refresh, mutation.afterCharacter, mutation.characterIndex, prepared)) {
+        return false;
+    }
+    return append_roster_appearance_frame(
+        scratch, refresh, prepared, "subclass_roster", key, nonce, response, written);
 }
 
 /** Refreshes the selected character's complete Family-0 appearance from committed State. */

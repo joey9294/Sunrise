@@ -29,8 +29,8 @@ namespace sunrise::server::bap::encrypted::queuez {
 
 /**
  * Decides whether one family-zero subscription publishes, and as which kind of frame.
- * A repeat naming the character the pair already holds reports no publish and no version bump.
- * Both callers send anyway, so the answer is which frame to build, not whether to answer.
+ * Retail sets the full-snapshot flag once per family and adds one to every later push, so a
+ * repeat that changes nothing is not sent at all.
  * @param before Current queuez state owned by the peer.
  * @param selectedCharacter Character the family-zero pair names now.
  * @param publish Gets whether a frame is needed.
@@ -131,6 +131,13 @@ namespace sunrise::server::bap::encrypted::queuez {
                                      std::uint64_t targetInstanceSoid,
                                      bool updatesAccount,
                                      SocketPlug& socketPlug) noexcept;
+
+/** Stages one resident subclass item-instance upsert without changing the Family-4 manifest. */
+[[nodiscard]] bool stage_subclass_selection(const SessionState& before,
+                                            std::uint64_t accountSoid,
+                                            std::uint64_t characterSoid,
+                                            std::uint64_t subclassInstanceSoid,
+                                            SubclassSelection& selection) noexcept;
 
 /**
  * Stages one Family-4 increment that adds a new resident item and updates its character.

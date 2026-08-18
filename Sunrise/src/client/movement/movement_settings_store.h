@@ -33,6 +33,8 @@ struct Settings {
     std::uint32_t flyToggleKey{kNoKey};
     /** World units per second while a direction is pressed. */
     float flySpeed{kDefaultFlySpeed};
+    /** Runtime-only Photo Mode activation key; the activation state itself is never persisted. */
+    std::uint32_t photoModeToggleKey{kNoKey};
 };
 
 /**

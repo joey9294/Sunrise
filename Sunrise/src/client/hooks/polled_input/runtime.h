@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 
 namespace sunrise::client::hooks::polled_input {
 
@@ -33,5 +34,14 @@ void hold_key(std::uint32_t virtualKey) noexcept;
 
 /** Stops reporting any key held on the game's behalf. */
 void release_key() noexcept;
+
+/**
+ * Reports selected keys released to game callers while Sunrise still sees their real state.
+ * @param virtualKeys Complete feature-owned key set for this frame.
+ */
+void set_blocked_keys(std::span<const std::uint32_t> virtualKeys) noexcept;
+
+/** Stops suppressing feature-owned keys. */
+void clear_blocked_keys() noexcept;
 
 } // namespace sunrise::client::hooks::polled_input

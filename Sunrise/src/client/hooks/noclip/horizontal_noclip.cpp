@@ -23,6 +23,7 @@
 #include "../../movement/movement_settings_store.h"
 #include "../../patterns/image_scan.h"
 #include "../fly/fly.h"
+#include "../photo_mode/photo_mode.h"
 #include "runtime.h"
 
 namespace sunrise::client::hooks::noclip {
@@ -198,7 +199,11 @@ capped_speed(const std::array<float, kVectorLanes>& velocity, float limit) noexc
         client::input::game_focused()
         && (GetAsyncKeyState(static_cast<int>(settings.noclipToggleKey)) & 0x8000) != 0;
     // An open interface owns the keyboard, so the bound key only tracks the press, it never flips.
-    if (core::ui::runtime::snapshot().visible) {
+    const photo_mode::Status photoMode = photo_mode::status();
+    if (core::ui::runtime::snapshot().visible || photoMode.requested
+        || photoMode.phase == photo_mode::Phase::entering
+        || photoMode.phase == photo_mode::Phase::active
+        || photoMode.phase == photo_mode::Phase::exiting) {
         g_toggleDown.store(down, std::memory_order_relaxed);
         return settings.noclipEnabled;
     }
@@ -230,7 +235,9 @@ capped_speed(const std::array<float, kVectorLanes>& velocity, float limit) noexc
 std::int32_t __fastcall havok_step(std::byte* simulation, float deltaTime) noexcept {
     std::array<float, kVectorLanes> nativeVelocity{};
     std::array<float, kVectorLanes> nativePosition{};
-    const bool enabledBeforeStep = poll_toggle();
+    const photo_mode::Status photoMode = photo_mode::status();
+    const bool photoModeNoclip = photoMode.phase == photo_mode::Phase::active;
+    const bool enabledBeforeStep = poll_toggle() || photoModeNoclip;
     const bool flying = fly::enabled();
     std::byte* const before = (enabledBeforeStep || flying) ? character_body(simulation) : nullptr;
     // Fly writes first, so the velocity read below is the one it asked for.
@@ -259,7 +266,7 @@ std::int32_t __fastcall havok_step(std::byte* simulation, float deltaTime) noexc
     // A character created or replaced during this step has no matching before-state.
     const bool sameBody = hasBody && body == before;
     // Re-read after the step, so a toggle from the interface thread lands before a position write.
-    const bool noclipping = enabledBeforeStep && enabled();
+    const bool noclipping = enabledBeforeStep && (enabled() || photoModeNoclip);
     // With both on this hook drives all three lanes. Fly holds the height, so carrying the
     // vertical one is safe.
     const bool verticalToo = noclipping && flying;
@@ -353,6 +360,10 @@ bool install() noexcept {
     core::log::write(
         core::log::Channel::client, core::log::Level::info, "ev=noclip stage=install result=ok");
     return true;
+}
+
+bool is_installed() noexcept {
+    return g_installed.load(std::memory_order_acquire);
 }
 
 /** Detaches the simulation-step detour, then clears the key state. */

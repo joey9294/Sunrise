@@ -6,6 +6,7 @@
 #include "../hooks/config_getter/config_getter_lifecycle.h"
 #include "../hooks/cursor/runtime.h"
 #include "../hooks/graphics/graphics_hook_lifecycle.h"
+#include "../hooks/inactivity/inactivity_override.h"
 #include "../hooks/infinite_ammo/infinite_ammo.h"
 #include "../hooks/network/runtime.h"
 #include "../hooks/noclip/runtime.h"
@@ -15,6 +16,7 @@
 #include "../hooks/retail_log/retail_log_lifecycle.h"
 #include "../hooks/spawn/spawn_runtime.h"
 #include "../hooks/teleport/runtime.h"
+#include "../inactivity/inactivity_settings_store.h"
 #include "../movement/movement_settings_store.h"
 #include "../spawn/population_settings_store.h"
 #include "../spawn/spawn_keybind_store.h"
@@ -35,6 +37,7 @@ bool initialize(void* module) noexcept {
     // Loaded here too, so the populator holds the saved settings before the panel first draws.
     spawn::initialize_population(module);
     player::initialize(module);
+    inactivity::initialize(module);
     return ui::runtime::initialize();
 }
 
@@ -68,6 +71,7 @@ bool shutdown() noexcept {
     hooks::bitmap::uninstall();
     hooks::bootflow::uninstall();
     hooks::infinite_ammo::uninstall();
+    hooks::inactivity::uninstall();
     hooks::noclip::uninstall();
     hooks::spawn::uninstall();
     hooks::teleport::uninstall();
@@ -106,6 +110,8 @@ bool shutdown() noexcept {
     runtime::g_graphicsStage = runtime::StageState::pending;
     runtime::g_platformStage = runtime::StageState::pending;
     ui::runtime::shutdown();
+    // The reverse of the order the stores initialize in.
+    inactivity::shutdown();
     spawn::shutdown_population();
     spawn::shutdown();
     player::shutdown();

@@ -11,10 +11,14 @@
 #define IDR_ITEM_NAMES 105
 #define IDR_ITEM_ICONS 106
 
+#define IDR_LOGO_SHEET 104
+#define IDR_PANOPTES_ICONS 105
+#define IDR_PANOPTES_UNKNOWN 106
+#define IDR_PANOPTES_NAMES 107
 /** The four numeric fields of the version resource, in FILEVERSION order. */
 #define SUNRISE_VER_MAJOR 0
 #define SUNRISE_VER_MINOR 3
-#define SUNRISE_VER_PATCH 2
+#define SUNRISE_VER_PATCH 23
 #define SUNRISE_VER_BUILD 0
 /** The same version as display text. Windows shows this string, not the four fields. */
-#define SUNRISE_VER_STRING "0.3.2.0"
+#define SUNRISE_VER_STRING "0.3.23.0"

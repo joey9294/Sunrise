@@ -8,8 +8,13 @@ namespace sunrise::server::bap {
 [[nodiscard]] bool consume(const client::network::BapRequest& request,
                            client::network::BapResponse& response) noexcept;
 
-/** Queues a fresh Family-4 account graph for active sessions. */
-[[nodiscard]] bool request_account_resync() noexcept;
+/**
+ * Arms a full Family-4 account refresh for every authenticated active client.
+ * UI-originated account edits use this because they have no request session to publish through.
+ * @return True when at least one active client was armed.
+ */
+[[nodiscard]] bool request_account_refresh() noexcept;
+
 
 /** Wipes every connection-owned nonce and transform buffer. */
 void shutdown() noexcept;

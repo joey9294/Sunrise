@@ -46,6 +46,12 @@ struct SocketPlugTransaction {
     queuez::SocketPlug update{};
 };
 
+/** Subclass ability selection and the exact QueueZ after-image promised by its response. */
+struct SubclassSelectionTransaction {
+    state::PendingSubclassSelection pending{};
+    queuez::SubclassSelection update{};
+};
+
 /** Item-state mutation and the exact QueueZ character after-image promised by its response. */
 struct ItemStateTransaction {
     state::PendingItemState pending{};
@@ -86,6 +92,7 @@ struct ServiceOutcome {
                                      activity_message::ActivityPlan,
                                      state::matchmaking::PendingMutation,
                                      EquipmentSwapTransaction,
+                                     SubclassSelectionTransaction,
                                      SocketPlugTransaction,
                                      ItemStateTransaction,
                                      ItemAcquisitionTransaction,
@@ -249,9 +256,8 @@ append_account_resync_notification(Scratch& scratch,
                                               queuez::SessionState& after) noexcept;
 
 /**
- * Appends the family-zero pair that follows an opcode-504 pick.
- * The Client holds the objIdx-1 buffer for one character at a time, so the pair moves with it. A
- * pick naming the character it already holds republishes the pair in place.
+ * Appends the family-zero move that follows an opcode-504 pick.
+ * The Client holds the objIdx-1 buffer for one character at a time, so the pair moves with it.
  * @param before Queuez state after the family-four move.
  * @param selectedCharacter Character the pick named.
  * @param key Active AES-GCM session key.
@@ -351,6 +357,16 @@ append_socket_appearance_refresh_notification(Scratch& scratch,
                                               std::span<std::byte> response,
                                               std::size_t& written) noexcept;
 
+/** Appends the Family-0 character ability refresh owed by a subclass selection. */
+[[nodiscard]] bool
+append_subclass_appearance_refresh_notification(Scratch& scratch,
+                                                const queuez::CharacterAppearanceRefresh& refresh,
+                                                const state::PendingSubclassSelection& mutation,
+                                                std::span<const std::byte, state::kAesKeySize> key,
+                                                std::array<std::byte, state::kBapNonceSize>& nonce,
+                                                std::span<std::byte> response,
+                                                std::size_t& written) noexcept;
+
 /** Appends a Family-3 character record followed by the changed account roster after equip. */
 [[nodiscard]] bool
 append_equipment_roster_refresh_notification(Scratch& scratch,
@@ -370,6 +386,16 @@ append_socket_roster_refresh_notification(Scratch& scratch,
                                           std::array<std::byte, state::kBapNonceSize>& nonce,
                                           std::span<std::byte> response,
                                           std::size_t& written) noexcept;
+
+/** Appends a Family-3 character-only appearance refresh after a subclass selection. */
+[[nodiscard]] bool
+append_subclass_roster_refresh_notification(Scratch& scratch,
+                                            const queuez::RosterAppearanceRefresh& refresh,
+                                            const state::PendingSubclassSelection& mutation,
+                                            std::span<const std::byte, state::kAesKeySize> key,
+                                            std::array<std::byte, state::kBapNonceSize>& nonce,
+                                            std::span<std::byte> response,
+                                            std::size_t& written) noexcept;
 
 /** Refreshes the selected character's complete Family-0 appearance from committed State. */
 [[nodiscard]] bool
@@ -400,6 +426,16 @@ append_socket_plug_notification(Scratch& scratch,
                                 std::span<const std::byte, state::kBapNonceSize> nonce,
                                 std::span<std::byte> response,
                                 std::size_t& written) noexcept;
+
+/** Appends the opcode-801 Family-4 subclass item-instance upsert. */
+[[nodiscard]] bool append_subclass_selection_notification(
+    Scratch& scratch,
+    const queuez::SubclassSelection& selection,
+    const state::PendingSubclassSelection& mutation,
+    std::span<const std::byte, state::kAesKeySize> key,
+    std::span<const std::byte, state::kBapNonceSize> nonce,
+    std::span<std::byte> response,
+    std::size_t& written) noexcept;
 
 /** Appends a Family-4 character upsert plus newly acquired item-instance upsert. */
 [[nodiscard]] bool

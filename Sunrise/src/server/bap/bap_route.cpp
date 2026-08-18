@@ -206,8 +206,8 @@ bool consume(const client::network::BapRequest& request,
     return success;
 }
 
-/** Queues the current account graph for every authenticated Family-4 session. */
-bool request_account_resync() noexcept {
+bool request_account_refresh() noexcept {
+
     AcquireSRWLockExclusive(&g_lock);
     g_accountGeneration = g_accountGeneration == (std::numeric_limits<std::uint64_t>::max)()
                               ? 1
@@ -219,10 +219,12 @@ bool request_account_resync() noexcept {
             continue;
         }
         session.accountResyncGeneration = generation;
+
         session.accountResyncArmed = true;
         ++armed;
     }
     ReleaseSRWLockExclusive(&g_lock);
+
 
     std::array<char, core::log::kLineCapacity> line{};
     const int count = std::snprintf(line.data(),
@@ -236,6 +238,7 @@ bool request_account_resync() noexcept {
                          armed != 0 ? core::log::Level::debug : core::log::Level::info,
                          {line.data(), static_cast<std::size_t>(count)});
     }
+
     return armed != 0;
 }
 

@@ -15,6 +15,59 @@ namespace sunrise::state {
  */
 [[nodiscard]] bool ensure_profile_item_identities() noexcept;
 
+/**
+/**
+ * Equips each character with the "Emotes" collection item (hash 3183180185) in the emote slot,
+ * in place of an individual emote, if it is not already equipped there. The stock client opens
+ * its own wheel-configuration screen for this item; the 4 ordinary sockets seed default lanes
+ * from its real plug pool so the wheel has something in every slot the first time it opens.
+ */
+[[nodiscard]] bool ensure_character_emote_collection() noexcept;
+
+/**
+ * Grants each character the other 2 subclasses of the class its equipped subclass belongs to,
+ * placing any missing ones into unequipped inventory with native socket defaults. Idempotent:
+ * a subclass already equipped or already sitting in inventory is left alone.
+ * @return True when every character with an equipped subclass ends up holding its whole class,
+ * or there was nothing to check (no account, or no character carries a subclass yet).
+ */
+[[nodiscard]] bool ensure_character_subclasses() noexcept;
+
+/** Prepared subclass socket-entry selection for the equipped selected-character subclass. */
+struct PendingSubclassSelection {
+    /** Exact prepare-time character view used as the commit staleness guard. */
+    CharacterState beforeCharacter{};
+    /** Canonical after-image. Only one authored ability-entry field differs. */
+    CharacterState afterCharacter{};
+    std::uint64_t accountSoid{};
+    std::uint64_t characterSoid{};
+    std::uint64_t subclassInstanceSoid{};
+    std::uint32_t subclassDefinitionHash{};
+    std::size_t characterIndex{};
+    std::uint16_t subclassDefinitionIndex{};
+    std::uint16_t socketEntryListIndex{};
+    /** Exact entry named by opcode 801. */
+    std::uint8_t requestedEntry{};
+    bool prepared{};
+};
+
+/**
+ * Prepares one opcode-801 selection against the selected character's exact equipped subclass.
+ * The installed socket-entry table maps the request to whichever of the character's 5 authored
+ * ability picks currently competes in the same group; no class-specific node indices are
+ * authored in State.
+ */
+[[nodiscard]] bool prepare_subclass_selection(std::uint64_t subclassInstanceSoid,
+                                              std::uint8_t requestedEntry,
+                                              PendingSubclassSelection& mutation) noexcept;
+
+/** Produces the complete uncommitted account after-image for a prepared subclass selection. */
+[[nodiscard]] bool preview_subclass_selection(const PendingSubclassSelection& mutation,
+                                              AccountState& after) noexcept;
+
+/** Commits a prepared subclass selection behind the exact full-character staleness guard. */
+[[nodiscard]] bool commit_subclass_selection(PendingSubclassSelection& mutation) noexcept;
+
 /** Direction of one checked character equipment mutation. */
 enum class EquipmentMutationKind : std::uint8_t {
     none,
@@ -215,6 +268,12 @@ initialize(void* module,
 /** Securely clears State, including activity destinations and matchmaking descriptors. */
 void shutdown() noexcept;
 
+/** Saves the current account/loadout snapshot for automatic restoration on the next launch. */
+[[nodiscard]] bool save_account() noexcept;
+
+/** Restores the saved account immediately while preserving the active character selection. */
+[[nodiscard]] bool load_account() noexcept;
+
 /** @return Immutable generated SignOn session fields. */
 [[nodiscard]] const SignOnState& sign_on() noexcept;
 
@@ -273,6 +332,30 @@ void shutdown() noexcept;
  * when the equip or unequip commits atomically and leaves the whole account valid.
  */
 [[nodiscard]] bool commit_equipment_swap(PendingEquipmentSwap& mutation) noexcept;
+
+/**
+ * Replaces one selected-character item's installed definition while preserving its instance.
+ * The new definition must resolve into the same inventory bucket; sockets return to native
+ * defaults and the complete resulting loadout must validate before publication.
+ */
+[[nodiscard]] bool replace_item_definition(std::uint64_t instanceSoid,
+                                           std::uint32_t definitionHash) noexcept;
+
+/** Atomically selects one authored subclass path's linked Super and melee entries. */
+[[nodiscard]] bool set_subclass_attunement(std::uint8_t superEntry,
+                                           std::uint8_t meleeEntry) noexcept;
+
+/** Atomically selects the complete movement, grenade, path, and class-ability tuple. */
+[[nodiscard]] bool set_subclass_abilities(std::uint8_t movementEntry,
+                                          std::uint8_t grenadeEntry,
+                                          std::uint8_t superEntry,
+                                          std::uint8_t meleeEntry,
+                                          std::uint8_t classEntry) noexcept;
+
+/** Replaces one authored socket hash without enforcing the installed compatibility pool. */
+[[nodiscard]] bool override_socket_plug(std::uint64_t instanceSoid,
+                                        std::uint8_t socketLane,
+                                        std::uint32_t plugDefinitionHash) noexcept;
 
 /**
  * Prepares one installed equippable definition as a new selected-character inventory instance.

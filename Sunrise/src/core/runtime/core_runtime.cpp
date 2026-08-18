@@ -16,7 +16,9 @@
 #include "../../state/entitlements/entitlement_runtime.h"
 #include "../../state/runtime/runtime.h"
 #include "../../state/unlocks/unlocks_runtime.h"
+#include "../console/overlay/console_overlay.h"
 #include "../filesystem/path.h"
+#include "../logging/console/log_console.h"
 #include "../logging/log.h"
 #include "../settings/settings.h"
 #include "../ui/modules/hud/hud.h"
@@ -112,6 +114,12 @@ bool initialize(void* module) noexcept {
             stage = "ui_hud";
         } else if (!ui::modules::logs::initialize()) {
             stage = "ui_logs";
+        } else if (!log::console::initialize()) {
+            stage = "log_console";
+        } else if (!console::overlay::initialize()) {
+            // Publishing here rather than with the renderer keeps the console's entries alive
+            // across a device loss, which tears the drawing context down and builds it again.
+            stage = "console";
         } else if (!state::entitlements::publish(settings::get().server.entitlements)) {
             stage = "entitlements";
         } else if (!state::initialize(module,
@@ -141,6 +149,8 @@ bool initialize(void* module) noexcept {
         state::content_manifest::shutdown();
         state::shutdown();
         state::entitlements::clear();
+        console::overlay::shutdown();
+        log::console::shutdown();
         ui::modules::logs::shutdown();
         ui::modules::hud::shutdown();
         ui::modules::registry::shutdown();
@@ -176,6 +186,8 @@ bool shutdown() noexcept {
     state::content_manifest::shutdown();
     state::shutdown();
     state::entitlements::clear();
+    console::overlay::shutdown();
+    log::console::shutdown();
     ui::modules::logs::shutdown();
     ui::modules::hud::shutdown();
     ui::modules::registry::shutdown();

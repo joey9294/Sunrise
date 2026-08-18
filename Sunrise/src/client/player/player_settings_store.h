@@ -1,12 +1,16 @@
 #pragma once
 
+#include <array>
+
 namespace sunrise::client::player {
 
 /** Runtime player configuration. This module owns it; Core settings do not carry it. */
 struct Settings {
     bool infiniteAmmoEnabled{false};
+    std::array<char, 64> personaName{};
     bool removeHud{false};
     bool hideWeapon{false};
+
 };
 
 /**

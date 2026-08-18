@@ -19,9 +19,14 @@
 #include "../hooks/spawn/spawn_runtime.h"
 #include "../hooks/teleport/runtime.h"
 #include "../inactivity/inactivity_settings_store.h"
+#include "../movement/movement_console.h"
+
 #include "../movement/movement_settings_store.h"
+#include "../player/player_console.h"
 #include "../spawn/population_settings_store.h"
+
 #include "../spawn/spawn_keybind_store.h"
+
 #include "../player/player_settings_store.h"
 #include "../targets/game.h"
 #include "../targets/steam_targets.h"
@@ -33,13 +38,19 @@ namespace sunrise::client {
 
 /** Initializes Client-owned process state without installing hooks. */
 bool initialize(void* module) noexcept {
-    // Loaded before the pages register, so each page draws saved values on its first frame.
+    // Loaded before the pages register, so the movement page draws saved values on its first frame.
     movement::initialize(module);
     spawn::initialize(module);
     // Loaded here too, so the populator holds the saved settings before the panel first draws.
     spawn::initialize_population(module);
     player::initialize(module);
+    // Published after the stores load, so the first read answers with the saved value rather
+    // than the default it is about to replace.
+    if (!movement::console::initialize() || !player::console::initialize()) {
+        return false;
+    }
     inactivity::initialize(module);
+
     return ui::runtime::initialize();
 }
 
@@ -131,6 +142,10 @@ bool shutdown() noexcept {
     inactivity::shutdown();
     spawn::shutdown_population();
     spawn::shutdown();
+    player::console::shutdown();
+    movement::console::shutdown();
+
+
     player::shutdown();
     movement::shutdown();
     core::log::write(core::log::Channel::client, core::log::Level::info, "ev=shutdown result=ok");

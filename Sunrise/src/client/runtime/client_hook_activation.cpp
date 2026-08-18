@@ -180,6 +180,8 @@ void clear_game_targets() noexcept {
     (void)hooks::presentation::install();
     (void)hooks::photo_mode::install();
     // Attaches whether or not the feature is on, so the interface can enable it without a restart.
+    // Attach at startup so the Player page can toggle infinite ammo without a restart.
+
     (void)hooks::infinite_ammo::install();
     // Resolves the activity config getter here; the hold itself runs on the frame tick.
     (void)hooks::inactivity::install();

@@ -409,13 +409,13 @@ std::byte* capture_forward(std::uint32_t playerIndex) noexcept {
     const std::byte* const block = camera + kCameraBlockStride * playerIndex;
     std::array<float, kVectorLanes> forward{};
     std::array<float, kVectorLanes> position{};
-    if (!read_at(block + kCameraForwardX, forward)) {
-        g_forwardValid.store(false, std::memory_order_release);
-        return nullptr;
-    }
-    if (!read_at(block + kCameraPositionX, position)) {
-        return nullptr;
-    }
+if (!read_at(block + kCameraForwardX, forward)) {
+    g_forwardValid.store(false, std::memory_order_release);
+    return nullptr;
+}
+if (!read_at(block + kCameraPositionX, position)) {
+    return nullptr;
+}
 
     }
     g_forward = forward;
@@ -508,11 +508,6 @@ void force_pending() noexcept {
     invoke_sync(physics);
     core::log::write(
         core::log::Channel::client, core::log::Level::info, "ev=teleport stage=force result=ok");
-}
-
-/** Reports the physics component the local player was last seen driving. */
-void* local_player_component() noexcept {
-    return g_playerComponent.load(std::memory_order_relaxed);
 }
 
 /** @param component Candidate physics component. @return True when the local player drives it. */

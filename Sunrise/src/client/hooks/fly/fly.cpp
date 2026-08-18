@@ -55,7 +55,85 @@ struct DriveState {
            || photoMode.phase == photo_mode::Phase::exiting;
 }
 
+/** @return One flag per direction, true while any key bound to it is down. */
+[[nodiscard]] std::array<bool, kDirectionCount> pressed_directions() noexcept {
+    std::array<bool, kDirectionCount> pressed{};
+    for (std::size_t index = 0; index < kActions.size(); ++index) {
+        const bindings::Binding& binding = g_bindings[index];
+        if (half_down(binding.primary) || half_down(binding.secondary)) {
+            pressed[static_cast<std::size_t>(kActions[index].direction)] = true;
+        }
+    }
+    return pressed;
+}
+
+/**
+ * Forward turned about the up axis. Which turn is right is unverified: if strafing is mirrored,
+ * negate both lanes.
+ * @return The strafe axis, or zeroes when the camera looks straight up or down.
+ */
+[[nodiscard]] teleport::Vector right_of(const teleport::Vector& forward) noexcept {
+    teleport::Vector right{forward[kLaneY], -forward[kLaneX], 0.0F};
+    const float lengthSquared = right[kLaneX] * right[kLaneX] + right[kLaneY] * right[kLaneY];
+    if (lengthSquared <= kMinimumLengthSquared) {
+        return teleport::Vector{};
+    }
+    const float length = std::sqrt(lengthSquared);
+    right[kLaneX] /= length;
+    right[kLaneY] /= length;
+    return right;
+}
+
+/**
+ * Composes the pressed directions into one unit vector.
+ * @param pressed One flag per direction.
+ * @param forward Camera forward vector.
+ * @return The direction to fly, or all zeroes when nothing is pressed.
+ */
+[[nodiscard]] teleport::Vector travel(const std::array<bool, kDirectionCount>& pressed,
+                                      const teleport::Vector& forward) noexcept {
+    const teleport::Vector right = right_of(forward);
+    teleport::Vector move{};
+    const auto add = [&move](const teleport::Vector& axis, float scale) noexcept {
+        for (std::size_t lane = 0; lane < teleport::kVectorLanes; ++lane) {
+            move[lane] += axis[lane] * scale;
+        }
+    };
+    if (pressed[static_cast<std::size_t>(Direction::forward)]) {
+        add(forward, 1.0F);
+    }
+    if (pressed[static_cast<std::size_t>(Direction::backward)]) {
+        add(forward, -1.0F);
+    }
+    if (pressed[static_cast<std::size_t>(Direction::right)]) {
+        add(right, 1.0F);
+    }
+    if (pressed[static_cast<std::size_t>(Direction::left)]) {
+        add(right, -1.0F);
+    }
+    if (pressed[static_cast<std::size_t>(Direction::up)]) {
+        move[teleport::kVerticalLane] += 1.0F;
+    }
+    if (pressed[static_cast<std::size_t>(Direction::down)]) {
+        move[teleport::kVerticalLane] -= 1.0F;
+    }
+    float lengthSquared = 0.0F;
+    for (const float lane : move) {
+        lengthSquared += lane * lane;
+    }
+    if (lengthSquared <= kMinimumLengthSquared) {
+        return teleport::Vector{};
+    }
+    // Normalised, so a diagonal is not faster than a straight line.
+    const float length = std::sqrt(lengthSquared);
+    for (float& lane : move) {
+        lane /= length;
+    }
+    return move;
+}
+
 /** Caps one velocity vector without changing a vector already under the supported limit. */
+
 void cap_speed(teleport::Vector& velocity, float limit) noexcept {
     float speedSquared = 0.0F;
     for (const float lane : velocity) {

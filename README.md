@@ -1,4 +1,17 @@
-# Sunrise
+# Sunrise — NaSTuRk Edition
+
+Custom merged Sunrise build maintained by **NaSTuRk**, including the experimental Panoptes
+loadout editor, live equipment and ability selectors, persistent loadouts, and cross-class
+subclass testing.
+
+This fork is based on [stanuwu/Sunrise](https://github.com/stanuwu/Sunrise) and retains its
+GNU GPLv3 license and third-party notices. The generated `panoptes_icons.pack` is intentionally
+not committed because it contains extracted game artwork. The compiled DLL is provided for the
+supported offline game build.
+
+The public source uses `panoptes_icons.empty.pack`, so it compiles without copyrighted artwork.
+Item pictures are disabled in self-built binaries unless the resource is replaced with a locally
+generated `SD2ICON1` icon pack.
 
 Destiny 2 Offline Exploration Mod
 

@@ -184,8 +184,6 @@ constexpr std::array<ViewFormat, 6> kTypelessViewFormats{
         return discard_staged(staged);
     }
     staged.dx11BackendInitialized = true;
-    // The interface draws its card without the logo when the sheet cannot be uploaded.
-    (void)textures::upload_logo_sheet(staged.device, staged.logoSheet);
     if (!input::install(staged.window)) {
         report::note(report::Stage::init, report::Reason::windowInput);
         return discard_staged(staged);
@@ -248,7 +246,9 @@ void release_render_target(Resources& resources) noexcept {
 /** @param resources SDK resources freed in an order that respects their dependencies. */
 void release_resources(Resources& resources) noexcept {
     release_render_target(resources);
+    textures::release_item_icons();
     textures::release_logo_sheet(resources.logoSheet);
+
     release_com(resources.context);
     release_com(resources.device);
     release_com(resources.swapChain);
@@ -320,8 +320,10 @@ void present(IDXGISwapChain* swapChain) noexcept {
     }
     ReleaseSRWLockExclusive(&g_rendererLock);
 
-    // The cursor policy calls Win32, so it runs only after the renderer lock is gone.
-    const bool visible = core::ui::runtime::snapshot().visible;
+    // The cursor policy calls Win32, so it runs only after the renderer lock is gone. Both take
+    // one answer rather than a list of surfaces, so Core decides what counts as open and neither
+    // of them has to learn that the console exists.
+    const bool visible = core::ui::runtime::interface_open(core::ui::runtime::snapshot());
     cursor::apply_visibility(visible);
     polled_input::apply_visibility(visible);
     // The game makes its raw-mouse window during startup, so the first tries find nothing.

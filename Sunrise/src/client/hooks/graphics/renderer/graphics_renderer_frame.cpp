@@ -5,14 +5,15 @@
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
 
+#include "../../../../core/console/overlay/console_overlay.h"
 #include "../../../../core/ui/busy/busy.h"
 #include "../../../../core/ui/fonts/runtime/ui_runtime_font_lifecycle.h"
-#include "../../../../core/ui/hud/overlay.h"
 #include "../../../../core/ui/layout/layout.h"
 #include "../../../../core/ui/notice/ui_notice_overlay.h"
 #include "../../../../core/ui/runtime/ui_visibility_runtime.h"
 #include "../../../../core/ui/scaling/dpi/ui_dpi_scaling.h"
 #include "../../../../core/ui/theme/sunrise_ui_theme.h"
+#include "../../inactivity/inactivity_override.h"
 #include "../input/input.h"
 #include "graphics_renderer_report.h"
 #include "state.h"
@@ -126,6 +127,8 @@ void render_frame_locked() noexcept {
     if (!fully_active_locked()) {
         return;
     }
+    // A steady tick with the game fully up, which is all the timeout hold needs.
+    hooks::inactivity::poll();
     if (core::ui::scaling::dpi::update(g_resources.window)) {
         // Style and text scale change together, before the backend sets up the frame.
         core::ui::theme::apply();
@@ -136,18 +139,21 @@ void render_frame_locked() noexcept {
         }
     }
     const core::ui::runtime::VisibilitySnapshot visibility = core::ui::runtime::snapshot();
-    transition_input_visibility_locked(visibility.visible);
+    // Either surface takes the keyboard, so input follows whichever is open rather than the menu
+    // alone. A console nobody can type into would draw a prompt and answer nothing.
+    transition_input_visibility_locked(core::ui::runtime::interface_open(visibility));
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     // A hidden surface still draws until its close animation ends, so the layout decides. The
-    // HUD, running-work and notice overlays draw whether the surface is open or not. The HUD
-    // goes first, so the surface stays above it when the two meet.
-    const bool hudDrawn = core::ui::hud::draw(visibility.enabled);
+    // running-work overlay draws whether the surface is open or not.
     const bool surfaceDrawn = core::ui::layout::render(visibility.visible);
+    // The console runs its queue whether or not it is showing, so it is called every frame. It
+    // draws last of the two typed surfaces, which keeps its prompt above the menu when both open.
+    const bool consoleDrawn = core::console::overlay::render(visibility.consoleVisible);
     const bool busyDrawn = core::ui::busy::draw();
     const bool noticeDrawn = core::ui::notice::draw();
-    if (!hudDrawn && !surfaceDrawn && !busyDrawn && !noticeDrawn) {
+    if (!hudDrawn && !surfaceDrawn && !consoleDrawn && !busyDrawn && !noticeDrawn) {
         // A frame nobody claimed still drains backend state, and sends no draw data.
         ImGui::EndFrame();
         return;
@@ -165,8 +171,8 @@ bool handle_window_message(HWND window, UINT message, WPARAM word, LPARAM value)
     }
 
     const core::ui::runtime::VisibilitySnapshot visibility = core::ui::runtime::snapshot();
-    transition_input_visibility_locked(visibility.visible);
-    if (!visibility.visible) {
+    transition_input_visibility_locked(core::ui::runtime::interface_open(visibility));
+    if (!core::ui::runtime::interface_open(visibility)) {
         // Hidden input stays with the game and never enters Dear ImGui's event queue.
         ReleaseSRWLockExclusive(&g_rendererLock);
         return false;

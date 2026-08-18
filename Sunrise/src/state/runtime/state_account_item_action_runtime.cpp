@@ -42,6 +42,7 @@ bool prepare_socket_plug(std::uint64_t targetInstanceSoid,
                               targetInstanceSoid,
                               socketLane,
                               plugDefinitionIndex,
+                              false,
                               mutation)) {
         report_socket_plug("prepare",
                            "fail",
@@ -69,6 +70,147 @@ bool prepare_socket_plug(std::uint64_t targetInstanceSoid,
                        mutation.plugBucketId,
                        mutation.targetEquipped,
                        mutation.itemIndex);
+    return true;
+}
+
+/** Prepares one unrestricted editor socket selection. */
+bool prepare_socket_plug_unrestricted(std::uint64_t targetInstanceSoid,
+                                      std::uint8_t socketLane,
+                                      std::uint16_t plugDefinitionIndex,
+                                      PendingSocketPlug& mutation) noexcept {
+    mutation = {};
+    const AccountState snapshot = account_snapshot();
+    std::size_t characterIndex = snapshot.characterCount;
+    if (targetInstanceSoid != 0 && account::valid(snapshot)) {
+        for (std::size_t index = 0; index < snapshot.characterCount; ++index) {
+            if (snapshot.characters[index].selected) {
+                characterIndex = index;
+                break;
+            }
+        }
+    }
+    if (characterIndex >= snapshot.characterCount
+        || !stage_socket_plug(snapshot,
+                              characterIndex,
+                              targetInstanceSoid,
+                              socketLane,
+                              plugDefinitionIndex,
+                              true,
+                              mutation)) {
+        report_socket_plug("prepare_editor",
+                           "fail",
+                           "ownership_definition_or_lane",
+                           0,
+                           targetInstanceSoid,
+                           0,
+                           socketLane,
+                           plugDefinitionIndex,
+                           0,
+                           0,
+                           false,
+                           0);
+        return false;
+    }
+    report_socket_plug("prepare_editor",
+                       "ok",
+                       "ready",
+                       mutation.characterSoid,
+                       mutation.targetInstanceSoid,
+                       mutation.targetDefinitionIndex,
+                       mutation.socketLane,
+                       mutation.plugDefinitionIndex,
+                       mutation.targetBucketId,
+                       mutation.plugBucketId,
+                       mutation.targetEquipped,
+                       mutation.itemIndex);
+    return true;
+}
+
+/** Replaces one item definition while preserving its inventory position. */
+bool replace_item_definition_unrestricted(std::uint64_t targetInstanceSoid,
+                                          std::uint32_t replacementDefinitionHash) noexcept {
+    if (targetInstanceSoid == 0
+        || replacementDefinitionHash == authored_inventory::kNoDefinitionHash) {
+        return false;
+    }
+
+    AcquireSRWLockExclusive(&runtime::storage::g_stateLock);
+    AccountState candidate = runtime::storage::g_state.account;
+    std::size_t characterIndex = candidate.characterCount;
+    for (std::size_t index = 0; index < candidate.characterCount; ++index) {
+        if (candidate.characters[index].selected) {
+            characterIndex = index;
+            break;
+        }
+    }
+    if (!account::valid(candidate) || characterIndex >= candidate.characterCount) {
+        ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+        return false;
+    }
+
+    CharacterState& character = candidate.characters[characterIndex];
+    CharacterItemLocation location{};
+    family4_loadout::ResolvedLoadout beforeLoadout{};
+    if (!find_character_item_location(character, targetInstanceSoid, location)
+        || !family4_loadout::resolve(candidate, characterIndex, beforeLoadout)) {
+        ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+        return false;
+    }
+
+    authored_inventory::Item* target = character_item_at(character, location);
+    build_data::items::Definition currentDefinition{};
+    build_data::items::Definition replacementDefinition{};
+    item_details::Definition currentDetail{};
+    item_details::Definition replacementDetail{};
+    ResolvedPosition beforePosition{};
+    if (target == nullptr || target->definitionHash == replacementDefinitionHash
+        || !build_data::find_item_definition_hash(target->definitionHash, currentDefinition)
+        || !build_data::find_configured_item_detail(currentDefinition.definitionIndex, currentDetail)
+        || !build_data::find_item_definition_hash(replacementDefinitionHash, replacementDefinition)
+        || !build_data::find_configured_item_detail(replacementDefinition.definitionIndex,
+                                                    replacementDetail)
+        || currentDefinition.bucketId != replacementDefinition.bucketId
+        || currentDetail.bucketId != replacementDetail.bucketId
+        || currentDetail.equipmentSlot != replacementDetail.equipmentSlot
+        || replacementDetail.instancedDefinitionState
+               != item_details::InstancedDefinitionState::instanced
+        || !find_resolved_position(beforeLoadout, targetInstanceSoid, beforePosition)) {
+        ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+        return false;
+    }
+
+    target->definitionHash = replacementDefinitionHash;
+    target->sockets = {};
+
+    family4_loadout::ResolvedLoadout afterLoadout{};
+    ResolvedPosition afterPosition{};
+    const family4_loadout::ResolvedItem* resolvedTarget = nullptr;
+    if (!account::valid(candidate)
+        || !family4_loadout::resolve(candidate, characterIndex, afterLoadout)
+        || !find_resolved_position(afterLoadout, targetInstanceSoid, afterPosition)
+        || !same_position(beforePosition, afterPosition)) {
+        ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+        return false;
+    }
+    for (std::size_t index = 0; index < afterLoadout.itemCount; ++index) {
+        const auto& resolved = afterLoadout.items[index];
+        if (resolved.instance.instanceSoid != targetInstanceSoid) {
+            continue;
+        }
+        if (resolvedTarget != nullptr) {
+            ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+            return false;
+        }
+        resolvedTarget = &resolved;
+    }
+    if (resolvedTarget == nullptr
+        || resolvedTarget->instance.baseDefinitionIndex != replacementDefinition.definitionIndex) {
+        ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+        return false;
+    }
+
+    runtime::storage::g_state.account = candidate;
+    ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
     return true;
 }
 
@@ -167,6 +309,7 @@ bool prepare_character_selector_socket_plug(std::uint64_t instanceIdentityToken,
                               resolvedTarget->instance.instanceSoid,
                               resolvedSocketLane,
                               plugDefinitionIndex,
+                              false,
                               mutation)
         || mutation.targetEquipped != expectedEquipped) {
         report_socket_plug("prepare_location",
@@ -224,6 +367,7 @@ bool preview_socket_plug(const PendingSocketPlug& mutation, AccountState& after)
                            mutation.targetInstanceSoid,
                            mutation.socketLane,
                            mutation.plugDefinitionIndex,
+                           mutation.unrestricted,
                            canonical)
         || canonical.accountSoid != mutation.accountSoid
         || canonical.characterSoid != mutation.characterSoid
@@ -243,6 +387,7 @@ bool preview_socket_plug(const PendingSocketPlug& mutation, AccountState& after)
         || canonical.materialRequirementCount != mutation.materialRequirementCount
         || canonical.profileChanged != mutation.profileChanged
         || canonical.targetEquipped != mutation.targetEquipped
+        || canonical.unrestricted != mutation.unrestricted
         || !same_character(canonical.beforeCharacter, mutation.beforeCharacter)
         || !same_character(canonical.afterCharacter, mutation.afterCharacter)) {
         return false;
@@ -328,6 +473,7 @@ bool commit_socket_plug(PendingSocketPlug& mutation) noexcept {
                            prepared.targetInstanceSoid,
                            prepared.socketLane,
                            prepared.plugDefinitionIndex,
+                           prepared.unrestricted,
                            canonical)
         || canonical.characterSoid != prepared.characterSoid
         || canonical.accountSoid != prepared.accountSoid
@@ -347,6 +493,7 @@ bool commit_socket_plug(PendingSocketPlug& mutation) noexcept {
         || canonical.materialRequirementCount != prepared.materialRequirementCount
         || canonical.profileChanged != prepared.profileChanged
         || canonical.targetEquipped != prepared.targetEquipped
+        || canonical.unrestricted != prepared.unrestricted
         || !same_character(canonical.beforeCharacter, prepared.beforeCharacter)
         || !same_character(canonical.afterCharacter, prepared.afterCharacter)) {
         ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
@@ -508,6 +655,106 @@ bool commit_item_state(PendingItemState& mutation) noexcept {
                       prepared.afterFlags,
                       prepared.targetEquipped,
                       prepared.itemIndex);
+    return true;
+}
+
+/** Prepares one checked subclass socket-entry selection without publishing account State. */
+bool prepare_subclass_selection(std::uint64_t subclassInstanceSoid,
+                                std::uint8_t requestedEntry,
+                                PendingSubclassSelection& mutation) noexcept {
+    mutation = {};
+    const AccountState snapshot = account_snapshot();
+    std::size_t characterIndex = snapshot.characterCount;
+    if (account::valid(snapshot)) {
+        for (std::size_t index = 0; index < snapshot.characterCount; ++index) {
+            if (snapshot.characters[index].selected) {
+                characterIndex = index;
+                break;
+            }
+        }
+    }
+    if (characterIndex >= snapshot.characterCount
+        || !stage_subclass_selection(
+            snapshot, characterIndex, subclassInstanceSoid, requestedEntry, mutation)) {
+        mutation = {};
+        return false;
+    }
+    return true;
+}
+
+/** Produces the complete account after-image while the prepared subclass action remains current. */
+bool preview_subclass_selection(const PendingSubclassSelection& mutation,
+                                AccountState& after) noexcept {
+    after = {};
+    if (!mutation.prepared || mutation.accountSoid == 0 || mutation.characterSoid == 0
+        || mutation.subclassInstanceSoid == 0 || mutation.characterIndex >= kCharacterCapacity) {
+        return false;
+    }
+    const AccountState current = account_snapshot();
+    if (mutation.characterIndex >= current.characterCount
+        || current.primarySoid != mutation.accountSoid
+        || !same_character(current.characters[mutation.characterIndex], mutation.beforeCharacter)) {
+        return false;
+    }
+    PendingSubclassSelection canonical{};
+    if (!stage_subclass_selection(current,
+                                  mutation.characterIndex,
+                                  mutation.subclassInstanceSoid,
+                                  mutation.requestedEntry,
+                                  canonical)
+        || !same_character(canonical.afterCharacter, mutation.afterCharacter)) {
+        return false;
+    }
+    after = current;
+    after.characters[mutation.characterIndex] = canonical.afterCharacter;
+    family4_loadout::ResolvedLoadout resolved{};
+    return account::valid(after)
+           && family4_loadout::resolve(after, mutation.characterIndex, resolved);
+}
+
+/** Commits one prepared subclass selection behind exact account and character guards. */
+bool commit_subclass_selection(PendingSubclassSelection& mutation) noexcept {
+    const PendingSubclassSelection prepared = mutation;
+    mutation = {};
+    if (!prepared.prepared || prepared.accountSoid == 0 || prepared.characterSoid == 0
+        || prepared.subclassInstanceSoid == 0 || prepared.characterIndex >= kCharacterCapacity
+        || prepared.beforeCharacter.soid != prepared.characterSoid
+        || prepared.afterCharacter.soid != prepared.characterSoid) {
+        return false;
+    }
+
+    AcquireSRWLockExclusive(&runtime::storage::g_stateLock);
+    AccountState candidate = runtime::storage::g_state.account;
+    if (prepared.characterIndex >= candidate.characterCount
+        || candidate.primarySoid != prepared.accountSoid
+        || !same_character(candidate.characters[prepared.characterIndex],
+                           prepared.beforeCharacter)) {
+        ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+        return false;
+    }
+    PendingSubclassSelection canonical{};
+    if (!stage_subclass_selection(candidate,
+                                  prepared.characterIndex,
+                                  prepared.subclassInstanceSoid,
+                                  prepared.requestedEntry,
+                                  canonical)
+        || !same_character(canonical.afterCharacter, prepared.afterCharacter)) {
+        ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+        return false;
+    }
+    candidate.characters[prepared.characterIndex] = canonical.afterCharacter;
+    family4_loadout::ResolvedLoadout checked{};
+    if (!account::valid(candidate)
+        || !family4_loadout::resolve(candidate, prepared.characterIndex, checked)) {
+        ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+        return false;
+    }
+    runtime::storage::g_state.account = candidate;
+    ReleaseSRWLockExclusive(&runtime::storage::g_stateLock);
+
+    // The published ability buckets are keyed to whichever selection is currently active; that
+    // just changed, so the domain is stale the moment the account write above becomes visible.
+    build_data::invalidate_ability_buckets();
     return true;
 }
 

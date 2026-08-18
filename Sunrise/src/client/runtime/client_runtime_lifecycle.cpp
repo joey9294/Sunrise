@@ -6,18 +6,27 @@
 #include "../hooks/config_getter/config_getter_lifecycle.h"
 #include "../hooks/cursor/runtime.h"
 #include "../hooks/graphics/graphics_hook_lifecycle.h"
+#include "../hooks/inactivity/inactivity_override.h"
 #include "../hooks/infinite_ammo/infinite_ammo.h"
 #include "../hooks/network/runtime.h"
 #include "../hooks/noclip/runtime.h"
 #include "../hooks/package_trust/package_trust_bypass.h"
+#include "../hooks/photo_mode/photo_mode.h"
 #include "../hooks/polled_input/runtime.h"
+#include "../hooks/presentation/presentation.h"
 #include "../hooks/queuez/queuez_hook_lifecycle.h"
 #include "../hooks/retail_log/retail_log_lifecycle.h"
 #include "../hooks/spawn/spawn_runtime.h"
 #include "../hooks/teleport/runtime.h"
+#include "../inactivity/inactivity_settings_store.h"
+#include "../movement/movement_console.h"
+
 #include "../movement/movement_settings_store.h"
+#include "../player/player_console.h"
 #include "../spawn/population_settings_store.h"
+
 #include "../spawn/spawn_keybind_store.h"
+
 #include "../player/player_settings_store.h"
 #include "../targets/game.h"
 #include "../targets/steam_targets.h"
@@ -29,12 +38,19 @@ namespace sunrise::client {
 
 /** Initializes Client-owned process state without installing hooks. */
 bool initialize(void* module) noexcept {
-    // Loaded before the pages register, so each page draws saved values on its first frame.
+    // Loaded before the pages register, so the movement page draws saved values on its first frame.
     movement::initialize(module);
     spawn::initialize(module);
     // Loaded here too, so the populator holds the saved settings before the panel first draws.
     spawn::initialize_population(module);
     player::initialize(module);
+    // Published after the stores load, so the first read answers with the saved value rather
+    // than the default it is about to replace.
+    if (!movement::console::initialize() || !player::console::initialize()) {
+        return false;
+    }
+    inactivity::initialize(module);
+
     return ui::runtime::initialize();
 }
 
@@ -50,7 +66,21 @@ bool shutdown() noexcept {
     }
     // Detached after presentation, so no later frame can apply the cursor policy.
     hooks::cursor::uninstall();
-    hooks::polled_input::uninstall();
+    // Photo Mode exits while its camera, collision and input dependencies are still attached.
+    if (!hooks::photo_mode::uninstall()) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::error,
+                         "ev=shutdown stage=photo_mode result=fail");
+        ReleaseSRWLockExclusive(&runtime::g_lock);
+        return false;
+    }
+    if (!hooks::presentation::uninstall()) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::error,
+                         "ev=shutdown stage=presentation result=fail");
+        ReleaseSRWLockExclusive(&runtime::g_lock);
+        return false;
+    }
     if (!hooks::network::uninstall()) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::error,
@@ -68,9 +98,11 @@ bool shutdown() noexcept {
     hooks::bitmap::uninstall();
     hooks::bootflow::uninstall();
     hooks::infinite_ammo::uninstall();
+    hooks::inactivity::uninstall();
     hooks::noclip::uninstall();
     hooks::spawn::uninstall();
     hooks::teleport::uninstall();
+    hooks::polled_input::uninstall();
     hooks::queuez::uninstall();
     if (!hooks::config_getter::uninstall()) {
         ReleaseSRWLockExclusive(&runtime::g_lock);
@@ -106,8 +138,14 @@ bool shutdown() noexcept {
     runtime::g_graphicsStage = runtime::StageState::pending;
     runtime::g_platformStage = runtime::StageState::pending;
     ui::runtime::shutdown();
+    // The reverse of the order the stores initialize in.
+    inactivity::shutdown();
     spawn::shutdown_population();
     spawn::shutdown();
+    player::console::shutdown();
+    movement::console::shutdown();
+
+
     player::shutdown();
     movement::shutdown();
     core::log::write(core::log::Channel::client, core::log::Level::info, "ev=shutdown result=ok");

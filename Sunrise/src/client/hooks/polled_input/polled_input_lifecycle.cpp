@@ -88,11 +88,15 @@ bool install() noexcept {
 /** Detaches both polled key guards and stops answering game reads. */
 void uninstall() noexcept {
     if (!g_installed.load(std::memory_order_acquire)) {
+        clear_blocked_keys();
+        release_key();
         release_module();
         return;
     }
     // Reads go back to the real state before the trampoline that serves them is gone.
     apply_policy(false);
+    clear_blocked_keys();
+    release_key();
     if (!hooking::detour::uninstall(g_handles)) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::warn,

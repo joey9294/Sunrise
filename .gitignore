@@ -10,6 +10,8 @@
 *.sln.docstates
 *.aps
 *.log
+Sunrise/resources/panoptes_icons.pack
+loadout.save
 
 # CMake build files
 /build/

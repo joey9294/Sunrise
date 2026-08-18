@@ -18,11 +18,14 @@
 #include "../hooks/config_getter/config_getter_lifecycle.h"
 #include "../hooks/cursor/runtime.h"
 #include "../hooks/graphics/graphics_hook_lifecycle.h"
+#include "../hooks/inactivity/inactivity_override.h"
 #include "../hooks/infinite_ammo/infinite_ammo.h"
 #include "../hooks/network/runtime.h"
 #include "../hooks/noclip/runtime.h"
 #include "../hooks/package_trust/package_trust_bypass.h"
+#include "../hooks/photo_mode/photo_mode.h"
 #include "../hooks/polled_input/runtime.h"
+#include "../hooks/presentation/presentation.h"
 #include "../hooks/queuez/queuez_hook_lifecycle.h"
 #include "../hooks/retail_log/retail_log_lifecycle.h"
 #include "../hooks/spawn/spawn_runtime.h"
@@ -173,8 +176,15 @@ void clear_game_targets() noexcept {
     (void)hooks::spawn::install();
     // Noclip owns its Havok-step target, so a patch-specific miss cannot disable teleport.
     (void)hooks::noclip::install();
+    // Presentation owns reusable weapon/HUD policies; Photo Mode composes them with movement.
+    (void)hooks::presentation::install();
+    (void)hooks::photo_mode::install();
     // Attaches whether or not the feature is on, so the interface can enable it without a restart.
+    // Attach at startup so the Player page can toggle infinite ammo without a restart.
+
     (void)hooks::infinite_ammo::install();
+    // Resolves the activity config getter here; the hold itself runs on the frame tick.
+    (void)hooks::inactivity::install();
     (void)hooks::queuez::install();
     // The bitmap reference guard puts the none sentinel in place of a reference outside tag
     // space. Without it the widget's stored-reference reader faults.

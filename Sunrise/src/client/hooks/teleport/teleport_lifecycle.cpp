@@ -13,10 +13,10 @@
 
 #include "../../../core/logging/log.h"
 #include "../../hooking/detour.h"
-#include "../../player/player_position.h"
-#include "../bootflow/bootflow_hook_lifecycle.h"
 #include "../fly/fly.h"
+#include "../photo_mode/photo_mode.h"
 #include "../polled_input/runtime.h"
+#include "../presentation/presentation.h"
 #include "../sword_skate/sword_skate.h"
 #include "internal.h"
 #include "runtime.h"
@@ -78,13 +78,17 @@ template <typename T> [[nodiscard]] T original(std::size_t slot) noexcept {
 std::int64_t __fastcall camera_transform(std::uint32_t playerIndex) noexcept {
     const CameraTransform next = original<CameraTransform>(kCameraSlot);
     const std::int64_t result = next != nullptr ? next(playerIndex) : 0;
-    capture_forward(playerIndex);
+    std::byte* const cameraBlock = capture_forward(playerIndex);
+    hooks::photo_mode::apply(playerIndex, cameraBlock);
+    hooks::presentation::apply(playerIndex);
+    // Photo Mode polls first so a duplicate binding cannot toggle another movement feature.
+    hooks::fly::poll_toggle();
     poll_request();
     force_pending();
     // Read here, not on the physics tick: that tick stops for a player who is standing still.
-    hooks::fly::poll_toggle();
     client::player::position::poll();
     hooks::bootflow::poll_world_step();
+
     return result;
 }
 
@@ -101,8 +105,6 @@ std::int64_t __fastcall physics_sync(std::byte* component, std::byte* outFlags) 
     // is written and read inside this tick, so it has to run here and not on a frame poll.
     hooks::sword_skate::apply(component);
     hooks::fly::apply(component);
-    // This tick is the only one that sees every component, so it is where the player's is found.
-    client::player::position::observe(component);
     const PhysicsSync next = original<PhysicsSync>(kPhysicsSlot);
     return next != nullptr ? next(component, outFlags) : 0;
 }
@@ -183,6 +185,10 @@ bool install() noexcept {
     return true;
 }
 
+bool is_installed() noexcept {
+    return g_installed.load(std::memory_order_acquire);
+}
+
 /** Calls the physics sync for one component through the installed trampoline. */
 void invoke_sync(void* component) noexcept {
     const PhysicsSync next = original<PhysicsSync>(kPhysicsSlot);
@@ -201,7 +207,6 @@ void uninstall() noexcept {
     clear_targets();
     clear_action_keys();
     hooks::fly::reset();
-    client::player::position::reset();
     polled_input::release_key();
     (void)hooking::detour::uninstall(g_handles);
     g_handles = {};

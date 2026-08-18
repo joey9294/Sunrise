@@ -44,6 +44,9 @@ void clear_targets() noexcept;
  */
 [[nodiscard]] bool install() noexcept;
 
+/** @return True while both Teleport service hooks are attached. */
+[[nodiscard]] bool is_installed() noexcept;
+
 /** Detaches both teleport hooks. */
 void uninstall() noexcept;
 
@@ -51,7 +54,7 @@ void uninstall() noexcept;
  * Publishes the camera forward vector for the physics tick that follows.
  * @param playerIndex Player the camera pose block belongs to.
  */
-void capture_forward(std::uint32_t playerIndex) noexcept;
+[[nodiscard]] std::byte* capture_forward(std::uint32_t playerIndex) noexcept;
 
 /** Latches one teleport request if the bound key went down this frame. */
 void poll_request() noexcept;
@@ -96,6 +99,9 @@ void apply_pending(void* component) noexcept;
  */
 [[nodiscard]] bool owns_local_player(void* component) noexcept;
 
+/** @return True while the game publishes a controlled local player. */
+[[nodiscard]] bool local_player_available() noexcept;
+
 /**
  * Reads the world position of the body a physics component drives.
  * @param component Physics component.
@@ -103,13 +109,6 @@ void apply_pending(void* component) noexcept;
  * @return True when the body was found and read.
  */
 [[nodiscard]] bool read_position(void* component, Vector& position) noexcept;
-
-/**
- * Reports the physics component the local player was last seen driving.
- * The sync stops for a player at rest, so a frame poll has no other way back to them.
- * @return That component, or null before the player has been seen. Prove it before use.
- */
-[[nodiscard]] void* local_player_component() noexcept;
 
 /**
  * Writes the world position of the body a physics component drives.

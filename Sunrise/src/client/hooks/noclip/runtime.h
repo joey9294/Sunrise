@@ -13,6 +13,9 @@ using Vector = std::array<float, 3>;
  */
 [[nodiscard]] bool install() noexcept;
 
+/** @return True while the independent Havok hook is attached. */
+[[nodiscard]] bool is_installed() noexcept;
+
 /** Detaches the simulation-step detour and clears runtime state. */
 void uninstall() noexcept;
 

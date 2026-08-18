@@ -17,6 +17,7 @@
 
 #include "../../core/filesystem/path.h"
 #include "../../core/logging/log.h"
+#include "movement_input.h"
 
 namespace sunrise::client::movement {
 namespace {
@@ -24,7 +25,7 @@ namespace {
 /** The module-owned configuration file, beside the generated settings and logs. */
 constexpr std::wstring_view kFileSuffix = L"\\movement.json";
 /** The document is a few scalars, so one small buffer covers both reading and writing. */
-constexpr std::size_t kFileCapacity = 512;
+constexpr std::size_t kFileCapacity = 768;
 /** Longest scalar accepted from the file. Anything longer is malformed rather than large. */
 constexpr std::size_t kScalarCapacity = 32;
 /** Highest Windows virtual-key code, so a stored binding cannot name a key that cannot exist. */
@@ -41,7 +42,8 @@ bool g_pathResolved{};
            && settings.virtualKey <= kMaximumVirtualKey
            && settings.noclipToggleKey <= kMaximumVirtualKey
            && settings.flyToggleKey <= kMaximumVirtualKey && settings.flySpeed >= kMinimumFlySpeed
-           && settings.flySpeed <= kMaximumFlySpeed;
+           && settings.flySpeed <= kMaximumFlySpeed
+           && settings.photoModeToggleKey <= kMaximumVirtualKey;
 }
 
 /** @param reason Key naming the step that failed. */
@@ -144,6 +146,12 @@ void parse(std::string_view text, Settings& output) noexcept {
         output.flySpeed =
             std::clamp(std::strtof(buffer.data(), nullptr), kMinimumFlySpeed, kMaximumFlySpeed);
     }
+    const bool hasPhotoModeKey = scalar_for(text, "\"photo_mode_toggle_key\"", scalar);
+    if ((hasPhotoModeKey || scalar_for(text, "\"free_camera_toggle_key\"", scalar))
+        && terminated(scalar, buffer)) {
+        output.photoModeToggleKey =
+            static_cast<std::uint32_t>(std::strtoul(buffer.data(), nullptr, 0));
+    }
 }
 
 /**
@@ -166,7 +174,8 @@ void parse(std::string_view text, Settings& output) noexcept {
                                    "  \"sword_skate_enabled\": %s,\n"
                                    "  \"fly_enabled\": %s,\n"
                                    "  \"fly_toggle_key\": %u,\n"
-                                   "  \"fly_speed\": %.3f\n}\n",
+                                   "  \"fly_speed\": %.3f,\n"
+                                   "  \"photo_mode_toggle_key\": %u\n}\n",
                                    settings.enabled ? "true" : "false",
                                    static_cast<double>(settings.distance),
                                    static_cast<unsigned>(settings.virtualKey),
@@ -175,8 +184,9 @@ void parse(std::string_view text, Settings& output) noexcept {
                                    settings.swordSkateEnabled ? "true" : "false",
                                    settings.flyEnabled ? "true" : "false",
                                    static_cast<unsigned>(settings.flyToggleKey),
-                                   static_cast<double>(settings.flySpeed));
-    if (size <= 0) {
+                                   static_cast<double>(settings.flySpeed),
+                                   static_cast<unsigned>(settings.photoModeToggleKey));
+    if (size <= 0 || static_cast<std::size_t>(size) >= document.size()) {
         return false;
     }
     const HANDLE file = CreateFileW(g_path.chars.data(),
@@ -250,6 +260,7 @@ void shutdown() noexcept {
     g_path = core::path::Buffer{};
     g_pathResolved = false;
     ReleaseSRWLockExclusive(&g_lock);
+    input::reset();
 }
 
 /** @return One lock-consistent copy of the current configuration. */

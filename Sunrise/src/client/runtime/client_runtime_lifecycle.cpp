@@ -10,7 +10,9 @@
 #include "../hooks/network/runtime.h"
 #include "../hooks/noclip/runtime.h"
 #include "../hooks/package_trust/package_trust_bypass.h"
+#include "../hooks/photo_mode/photo_mode.h"
 #include "../hooks/polled_input/runtime.h"
+#include "../hooks/presentation/presentation.h"
 #include "../hooks/queuez/queuez_hook_lifecycle.h"
 #include "../hooks/retail_log/retail_log_lifecycle.h"
 #include "../hooks/teleport/runtime.h"
@@ -44,7 +46,21 @@ bool shutdown() noexcept {
     }
     // Detached after presentation, so no later frame can apply the cursor policy.
     hooks::cursor::uninstall();
-    hooks::polled_input::uninstall();
+    // Photo Mode exits while its camera, collision and input dependencies are still attached.
+    if (!hooks::photo_mode::uninstall()) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::error,
+                         "ev=shutdown stage=photo_mode result=fail");
+        ReleaseSRWLockExclusive(&runtime::g_lock);
+        return false;
+    }
+    if (!hooks::presentation::uninstall()) {
+        core::log::write(core::log::Channel::client,
+                         core::log::Level::error,
+                         "ev=shutdown stage=presentation result=fail");
+        ReleaseSRWLockExclusive(&runtime::g_lock);
+        return false;
+    }
     if (!hooks::network::uninstall()) {
         core::log::write(core::log::Channel::client,
                          core::log::Level::error,
@@ -64,6 +80,7 @@ bool shutdown() noexcept {
     hooks::infinite_ammo::uninstall();
     hooks::noclip::uninstall();
     hooks::teleport::uninstall();
+    hooks::polled_input::uninstall();
     hooks::queuez::uninstall();
     if (!hooks::config_getter::uninstall()) {
         ReleaseSRWLockExclusive(&runtime::g_lock);

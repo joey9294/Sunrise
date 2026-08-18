@@ -35,6 +35,9 @@ void clear_targets() noexcept;
  */
 [[nodiscard]] bool install() noexcept;
 
+/** @return True while both Teleport service hooks are attached. */
+[[nodiscard]] bool is_installed() noexcept;
+
 /** Detaches both teleport hooks. */
 void uninstall() noexcept;
 
@@ -42,7 +45,7 @@ void uninstall() noexcept;
  * Publishes the camera forward vector for the physics tick that follows.
  * @param playerIndex Player the camera pose block belongs to.
  */
-void capture_forward(std::uint32_t playerIndex) noexcept;
+[[nodiscard]] std::byte* capture_forward(std::uint32_t playerIndex) noexcept;
 
 /** Latches one teleport request if the bound key went down this frame. */
 void poll_request() noexcept;
@@ -86,6 +89,9 @@ void apply_pending(void* component) noexcept;
  * has to act on the player's own tick needs the same test this module already performs.
  */
 [[nodiscard]] bool owns_local_player(void* component) noexcept;
+
+/** @return True while the game publishes a controlled local player. */
+[[nodiscard]] bool local_player_available() noexcept;
 
 /**
  * Reads the world position of the body a physics component drives.

@@ -18,6 +18,7 @@
 #include "../../../state/runtime/runtime.h"
 #include "../../input/window_focus.h"
 #include "../../movement/movement_settings_store.h"
+#include "../photo_mode/photo_mode.h"
 #include "../polled_input/runtime.h"
 #include "internal.h"
 #include "runtime.h"
@@ -346,20 +347,25 @@ void clear_targets() noexcept {
 }
 
 /** Publishes the camera forward vector for the physics tick that follows. */
-void capture_forward(std::uint32_t playerIndex) noexcept {
+std::byte* capture_forward(std::uint32_t playerIndex) noexcept {
     if (playerIndex == kInvalidHandle || g_cameraSingleton == nullptr) {
-        return;
+        g_forwardValid.store(false, std::memory_order_release);
+        return nullptr;
     }
     std::byte* const camera = g_cameraSingleton();
     if (camera == nullptr) {
-        return;
+        g_forwardValid.store(false, std::memory_order_release);
+        return nullptr;
     }
+    std::byte* const block = camera + kCameraBlockStride * playerIndex;
     std::array<float, kVectorLanes> forward{};
-    if (!read_at(camera + kCameraBlockStride * playerIndex + kCameraForwardX, forward)) {
-        return;
+    if (!read_at(block + kCameraForwardX, forward)) {
+        g_forwardValid.store(false, std::memory_order_release);
+        return nullptr;
     }
     g_forward = forward;
     g_forwardValid.store(true, std::memory_order_release);
+    return block;
 }
 
 /** Latches one teleport request if the bound key went down this frame. */
@@ -373,13 +379,24 @@ void poll_request() noexcept {
         g_keyDown.store(false, std::memory_order_relaxed);
         return;
     }
-    // An open interface owns the keyboard, so the key that binds the teleport must not fire it.
-    if (core::ui::runtime::snapshot().visible) {
-        g_keyDown.store(false, std::memory_order_relaxed);
-        return;
-    }
     const bool down = client::input::game_focused()
                       && (GetAsyncKeyState(static_cast<int>(settings.virtualKey)) & 0x8000) != 0;
+    // An open interface owns the keyboard, so the key that binds the teleport must not fire it.
+    if (core::ui::runtime::snapshot().visible) {
+        g_keyDown.store(down, std::memory_order_relaxed);
+        return;
+    }
+    const photo_mode::Status photoMode = photo_mode::status();
+    if (photoMode.requested || photoMode.phase == photo_mode::Phase::entering
+        || photoMode.phase == photo_mode::Phase::active
+        || photoMode.phase == photo_mode::Phase::exiting) {
+        g_requested.store(false, std::memory_order_release);
+        g_requestAge.store(0, std::memory_order_relaxed);
+        g_active.store(false, std::memory_order_relaxed);
+        g_keyDown.store(down, std::memory_order_relaxed);
+        hooks::polled_input::release_key();
+        return;
+    }
     if (down && !g_keyDown.exchange(down, std::memory_order_relaxed)) {
         g_requestAge.store(0, std::memory_order_relaxed);
         g_requested.store(true, std::memory_order_release);
@@ -442,6 +459,15 @@ void* local_player_component() noexcept {
 bool owns_local_player(void* component) noexcept {
     return component != nullptr && g_controlledHandle != nullptr
            && owns_player(static_cast<std::byte*>(component));
+}
+
+bool local_player_available() noexcept {
+    if (g_controlledHandle == nullptr) {
+        return false;
+    }
+    std::uint32_t controlled = kInvalidHandle;
+    g_controlledHandle(&controlled);
+    return controlled != kInvalidHandle;
 }
 
 /** Reads the world position of the body a physics component drives. */
